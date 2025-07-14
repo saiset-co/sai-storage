@@ -1,0 +1,70 @@
+# SAI Storage Service Configuration Template
+name: "sai-storage"
+version: "1.0.0"
+
+server:
+  http:
+    host: "127.0.0.1"
+    port: 8080
+    read_timeout: 30
+    write_timeout: 30
+    idle_timeout: 120
+
+logger:
+  level: "debug"
+  output: "stdout"
+  format: "console"
+
+auth_providers:
+  basic:
+    params:
+      username: "name"
+      password: "pass"
+  token:
+    params:
+      token: ""
+
+middlewares:
+  enabled: true
+  cors:
+    enabled: true
+    weight: 10
+    params:
+      AllowedOrigins: ["*"]
+      AllowedMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+      AllowedHeaders: ["Content-Type", "Authorization", "X-API-Key", "X-Request-ID"]
+      MaxAge: 86400
+  logging:
+    enabled: true
+    weight: 20
+    params:
+      log_level: "debug"
+      log_headers: true
+      log_body: true
+  recovery:
+    enabled: true
+    weight: 5
+    params:
+      stack_trace: true
+  auth:
+    enabled: true
+    params:
+      provider: basic
+
+health:
+  enabled: true
+
+docs:
+  enabled: true
+
+storage:
+  type: "mongo"
+  mongo:
+    connection_string: "mongodb://admin:your_secure_password_here@localhost:27017/sai?authSource=admin"
+    database: "sai"
+    timeout: 30
+    max_pool_size: 100
+    min_pool_size: 5
+    select_timeout: 5
+    idle_timeout: 30
+    socket_timeout: 30

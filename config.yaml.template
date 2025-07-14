@@ -1,0 +1,70 @@
+# SAI Storage Service Configuration Template
+name: "${SERVICE_NAME}"
+version: "${SERVICE_VERSION}"
+
+server:
+  http:
+    host: "${SERVER_HOST}"
+    port: ${SERVER_PORT}
+    read_timeout: ${SERVER_READ_TIMEOUT}
+    write_timeout: ${SERVER_WRITE_TIMEOUT}
+    idle_timeout: ${SERVER_IDLE_TIMEOUT}
+
+logger:
+  level: "${LOG_LEVEL}"
+  output: "${LOG_OUTPUT}"
+  format: "${LOG_FORMAT}"
+
+auth_providers:
+  basic:
+    params:
+      username: "${USERNAME}"
+      password: "${PASSWORD}"
+  token:
+    params:
+      token: "${TOKEN}"
+
+middlewares:
+  enabled: ${MIDDLEWARES_ENABLED}
+  cors:
+    enabled: ${CORS_ENABLED}
+    weight: 10
+    params:
+      AllowedOrigins: ${CORS_ALLOWED_ORIGINS}
+      AllowedMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+      AllowedHeaders: ["Content-Type", "Authorization", "X-API-Key", "X-Request-ID"]
+      MaxAge: ${CORS_MAX_AGE}
+  logging:
+    enabled: ${LOGGING_ENABLED}
+    weight: 20
+    params:
+      log_level: "${LOGGING_LOG_LEVEL}"
+      log_headers: ${LOGGING_LOG_HEADERS}
+      log_body: ${LOGGING_LOG_BODY}
+  recovery:
+    enabled: ${RECOVERY_ENABLED}
+    weight: 5
+    params:
+      stack_trace: ${RECOVERY_STACK_TRACE}
+  auth:
+    enabled: ${AUTH_ENABLED}
+    params:
+      provider: ${AUTH_PROVIDER}
+
+health:
+  enabled: ${HEALTH_ENABLED}
+
+docs:
+  enabled: ${DOCS_ENABLED}
+
+storage:
+  type: "${DATABASE_TYPE}"
+  mongo:
+    connection_string: "${MONGODB_CONNECTION_STRING}"
+    database: "${MONGO_DATABASE}"
+    timeout: ${MONGODB_TIMEOUT}
+    max_pool_size: ${MONGODB_MAX_POOL_SIZE}
+    min_pool_size: ${MONGODB_MIN_POOL_SIZE}
+    select_timeout: ${MONGODB_SELECT_TIMEOUT}
+    idle_timeout: ${MONGODB_IDLE_TIMEOUT}
+    socket_timeout: ${MONGODB_SOCKET_TIMEOUT}

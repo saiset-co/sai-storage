@@ -1,2 +1,4 @@
 .idea
 webhooks.db
+config.yaml
+.env

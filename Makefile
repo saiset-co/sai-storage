@@ -44,23 +44,32 @@ deps: ## Download Go dependencies
 	@echo "$(GREEN)Dependencies downloaded!$(NC)"
 
 .PHONY: setup
-setup: ## Create .env file from template if it doesn't exist
+setup: ## Create .env file from .env.example
 	@if [ ! -f "$(ENV_FILE)" ]; then \
-		echo "$(YELLOW)Creating .env file from template...$(NC)"; \
-		cp .env.example $(ENV_FILE) 2>/dev/null || \
-		echo "$(RED)No .env.example found. Please create $(ENV_FILE) manually.$(NC)"; \
+		echo "$(YELLOW)Creating .env file from .env.example...$(NC)"; \
+		if [ -f ".env.example" ]; then \
+			cp .env.example $(ENV_FILE); \
+			echo "$(GREEN).env file created from .env.example$(NC)"; \
+			echo "$(YELLOW)Please edit .env file with your configuration$(NC)"; \
+		else \
+			echo "$(RED)Error: .env.example file not found!$(NC)"; \
+			echo "$(YELLOW)Please create .env.example file first or create .env manually$(NC)"; \
+			exit 1; \
+		fi; \
 	else \
 		echo "$(GREEN).env file already exists!$(NC)"; \
 	fi
 
+.PHONY: check-env
+check-env: ## Check if .env file exists and create if needed
+	@if [ ! -f "$(ENV_FILE)" ]; then \
+		echo "$(YELLOW).env file not found. Creating...$(NC)"; \
+		$(MAKE) setup; \
+	fi
 
 .PHONY: config
-config: ## Generate config.yaml from template using environment variables
+config: check-env ## Generate config.yaml from template using environment variables
 	@echo "$(YELLOW)Generating configuration from template...$(NC)"
-	@if [ ! -f "$(ENV_FILE)" ]; then \
-		echo "$(RED)Error: $(ENV_FILE) file not found! Run 'make setup' first.$(NC)"; \
-		exit 1; \
-	fi
 	@if [ ! -f "config.yaml.template" ]; then \
 		echo "$(RED)Error: config.yaml.template not found!$(NC)"; \
 		exit 1; \
@@ -70,7 +79,7 @@ config: ## Generate config.yaml from template using environment variables
 	@echo "$(GREEN)Configuration generated at ./config.yaml$(NC)"
 
 .PHONY: config-debug
-config-debug: ## Debug config generation with verbose output
+config-debug: check-env ## Debug config generation with verbose output
 	@echo "$(YELLOW)=== CONFIG GENERATION DEBUG ===$(NC)"
 	@echo "$(YELLOW)1. Checking files...$(NC)"
 	@ls -la .env config.yaml.template 2>/dev/null || echo "$(RED)Some files missing$(NC)"
@@ -112,22 +121,14 @@ docker-build: ## Build Docker image
 	@echo "$(GREEN)Docker image built: $(DOCKER_IMAGE):$(DOCKER_TAG)$(NC)"
 
 .PHONY: docker-run
-docker-run: ## Run Docker container
+docker-run: check-env ## Run Docker container
 	@echo "$(YELLOW)Running Docker container...$(NC)"
-	@if [ ! -f ".env" ]; then \
-		echo "$(RED)Error: .env file not found! Run 'make setup' first.$(NC)"; \
-		exit 1; \
-	fi
 	@docker run --rm --env-file .env -p 8080:8080 $(DOCKER_IMAGE):$(DOCKER_TAG)
 
 ## Docker Compose
 .PHONY: up
-up: ## Start all services with docker-compose
+up: check-env ## Start all services with docker-compose
 	@echo "$(YELLOW)Starting all services...$(NC)"
-	@if [ ! -f ".env" ]; then \
-		echo "$(RED)Error: .env file not found! Run 'make setup' first.$(NC)"; \
-		exit 1; \
-	fi
 	@docker-compose up -d
 	@echo "$(GREEN)Services started!$(NC)"
 
@@ -153,7 +154,7 @@ logs-mongo: ## Show logs from MongoDB only
 restart: down up ## Restart all services
 
 .PHONY: rebuild
-rebuild: ## Rebuild and restart all services
+rebuild: check-env ## Rebuild and restart all services
 	@echo "$(YELLOW)Rebuilding and restarting services...$(NC)"
 	@docker-compose down
 	@docker-compose build --no-cache
@@ -162,12 +163,8 @@ rebuild: ## Rebuild and restart all services
 
 ## Database
 .PHONY: mongo-shell
-mongo-shell: ## Connect to MongoDB shell
+mongo-shell: check-env ## Connect to MongoDB shell
 	@echo "$(YELLOW)Connecting to MongoDB shell...$(NC)"
-	@if [ ! -f ".env" ]; then \
-		echo "$(RED)Error: .env file not found!$(NC)"; \
-		exit 1; \
-	fi
 	@set -a && . ./.env && set +a && \
 		docker exec -it sai-storage-mongodb mongosh \
 		--authenticationDatabase admin \

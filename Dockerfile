@@ -26,6 +26,7 @@ WORKDIR /app
 
 COPY --from=builder /build/sai-storage .
 COPY --from=builder /build/scripts/docker-entrypoint.sh /usr/local/bin/
+COPY --from=builder /build/config.template.yml .
 
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 RUN chown -R appuser:appgroup /app

@@ -112,7 +112,7 @@ run: config ## Run the application locally
 .PHONY: docker
 docker: config ## Build and start all services with docker compose
 	@echo "$(YELLOW)Building and starting all services...$(NC)"
-	@docker compose up -d
+	@docker compose up -d --build
 	@echo "$(GREEN)All services started!$(NC)"
 
 ## Docker Compose

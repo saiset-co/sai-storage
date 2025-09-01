@@ -1,7 +1,7 @@
 services:
   sai-storage:
     build:
-      context: ..
+      context: .
       dockerfile: ${DOCKERFILE}
     container_name: sai-storage
     ports:

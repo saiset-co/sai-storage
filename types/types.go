@@ -10,3 +10,17 @@ type StorageConfig struct {
 	IdleTimeout      int    `yaml:"idle_timeout" json:"idle_timeout"`
 	SocketTimeout    int    `yaml:"socket_timeout" json:"socket_timeout"`
 }
+
+type RedisConfig struct {
+	Host     string `yaml:"host" json:"host"`
+	Port     int    `yaml:"port" json:"port"`
+	Password string `yaml:"password" json:"password"`
+	DB       int    `yaml:"db" json:"db"`
+	Timeout  int    `yaml:"timeout" json:"timeout"`
+}
+
+type StorageManagerConfig struct {
+	Type  string        `yaml:"type" json:"type"`
+	Mongo StorageConfig `yaml:"mongo" json:"mongo"`
+	Redis RedisConfig   `yaml:"redis" json:"redis"`
+}

@@ -268,7 +268,7 @@ make check-tools   # Check if required tools are available
 │   ├── storage.go         # Storage interfaces
 │   └── types.go           # Configuration types
 ├── scripts/               # Deployment scripts
-├── config.yaml.template   # Configuration template
+├── config.template.yml   # Configuration template
 ├── .env                   # Environment variables
 ├── Dockerfile             # Docker configuration
 ├── docker-compose.yml     # Docker Compose configuration
@@ -366,7 +366,7 @@ The service uses a pluggable architecture for database backends. To add support 
 1. Implement the `StorageRepository` interface in `types/storage.go`
 2. Add your implementation in a new package (e.g., `internal/postgres/`)
 3. Update the switch statement in `cmd/main.go` to include your database type
-4. Add configuration options in `config.yaml.template`
+4. Add configuration options in `config.template.yml`
 
 **Current implementations:**
 - MongoDB (`DATABASE_TYPE=mongo`) - Full implementation available

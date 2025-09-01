@@ -37,9 +37,23 @@ func (h *Handler) CreateDocuments(ctx *saiTypes.RequestCtx) {
 }
 
 func (h *Handler) ReadDocuments(ctx *saiTypes.RequestCtx) {
-	req := types.ReadDocumentsRequest{}
-	if err := ctx.ReadJSON(&req); err != nil {
-		ctx.Error(saiTypes.WrapError(err, "Invalid JSON in request body"), fasthttp.StatusBadRequest)
+	req := types.ReadDocumentsRequest{
+		Collection: string(ctx.QueryArgs().Peek("collection")),
+		Limit:      ctx.QueryArgs().GetUintOrZero("limit"),
+		Skip:       ctx.QueryArgs().GetUintOrZero("skip"),
+	}
+
+	// Try to read JSON body if present (for complex filters)
+	if len(ctx.PostBody()) > 0 {
+		if err := ctx.ReadJSON(&req); err != nil {
+			ctx.Error(saiTypes.WrapError(err, "Invalid JSON in request body"), fasthttp.StatusBadRequest)
+			return
+		}
+	}
+
+	// Collection is required
+	if req.Collection == "" {
+		ctx.Error(saiTypes.NewError("collection parameter is required"), fasthttp.StatusBadRequest)
 		return
 	}
 

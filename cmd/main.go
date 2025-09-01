@@ -9,6 +9,7 @@ import (
 	"github.com/saiset-co/sai-service/service"
 	"github.com/saiset-co/sai-storage/internal/handlers"
 	"github.com/saiset-co/sai-storage/internal/mongo"
+	"github.com/saiset-co/sai-storage/internal/redis"
 	serviceLayer "github.com/saiset-co/sai-storage/internal/service"
 	"github.com/saiset-co/sai-storage/types"
 )
@@ -17,7 +18,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	srv, err := service.NewService(ctx, "./config.yaml")
+	srv, err := service.NewService(ctx, "./config.yml")
 	if err != nil {
 		log.Fatalf("Failed to create service: %v", err)
 	}
@@ -38,7 +39,17 @@ func main() {
 func initializeComponents() (err error) {
 	var repo types.StorageRepository
 
-	switch sai.Config().GetValue("storage.type", "mongo").(string) {
+	storageType := sai.Config().GetValue("storage.type", "mongo").(string)
+	sai.Logger().Info("Initializing storage", zap.String("type", storageType))
+
+	switch storageType {
+	case "redis":
+		repo, err = redis.NewRepository()
+		if err != nil {
+			return err
+		}
+	case "mongo":
+		fallthrough
 	default:
 		repo, err = mongo.NewRepository()
 		if err != nil {

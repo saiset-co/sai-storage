@@ -1,22 +1,27 @@
 # SAI Storage Microservice Makefile
 
-# Build configuration
-BINARY_NAME=sai-storage
-VERSION?=1.0.0
-BUILD_DIR=build
+# Load environment variables from .env if it exists
+ifneq (,$(wildcard ./.env))
+    include .env
+    export
+endif
+
+# Build configuration  
+BINARY_NAME?=$(SERVICE_NAME)
+VERSION?=$(SERVICE_VERSION)
 
 # Go configuration
 GO_VERSION=1.21
-GOOS?=linux
-GOARCH?=amd64
-CGO_ENABLED?=0
+GOOS=linux
+GOARCH=amd64
+CGO_ENABLED=1
 
 # Docker configuration
-DOCKER_IMAGE=sai-storage
-DOCKER_TAG?=latest
+DOCKER_IMAGE?=$(SERVICE_NAME)
+DOCKER_TAG=latest
 
 # Environment configuration
-ENV_FILE?=.env
+ENV_FILE=.env
 
 # Default target
 .DEFAULT_GOAL := help
@@ -35,16 +40,8 @@ help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  $(GREEN)%-20s$(NC) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 ## Development
-
-.PHONY: deps
-deps: ## Download Go dependencies
-	@echo "$(YELLOW)Downloading Go dependencies...$(NC)"
-	@go mod download
-	@go mod tidy
-	@echo "$(GREEN)Dependencies downloaded!$(NC)"
-
-.PHONY: setup
-setup: ## Create .env file from .env.example
+.PHONY: env
+env: ## Create .env file from .env.example
 	@if [ ! -f "$(ENV_FILE)" ]; then \
 		echo "$(YELLOW)Creating .env file from .env.example...$(NC)"; \
 		if [ -f ".env.example" ]; then \
@@ -60,43 +57,41 @@ setup: ## Create .env file from .env.example
 		echo "$(GREEN).env file already exists!$(NC)"; \
 	fi
 
-.PHONY: check-env
-check-env: ## Check if .env file exists and create if needed
-	@if [ ! -f "$(ENV_FILE)" ]; then \
-		echo "$(YELLOW).env file not found. Creating...$(NC)"; \
-		$(MAKE) setup; \
-	fi
+.PHONY: deps
+deps: ## Download Go dependencies
+	@echo "$(YELLOW)Downloading Go dependencies...$(NC)"
+	@go mod download
+	@go mod tidy
+	@echo "$(GREEN)Dependencies downloaded!$(NC)"
 
 .PHONY: config
-config: check-env ## Generate config.yaml from template using environment variables
+config: env ## Generate config.yml from template using environment variables
 	@echo "$(YELLOW)Generating configuration from template...$(NC)"
-	@if [ ! -f "config.yaml.template" ]; then \
-		echo "$(RED)Error: config.yaml.template not found!$(NC)"; \
+	@if [ ! -f "config.template.yml" ]; then \
+		echo "$(RED)Error: config.template.yml not found!$(NC)"; \
 		exit 1; \
 	fi
 	@echo "$(YELLOW)Loading environment variables from $(ENV_FILE)...$(NC)"
-	@set -a; . ./$(ENV_FILE); set +a; envsubst < ./config.yaml.template > ./config.yaml
-	@echo "$(GREEN)Configuration generated at ./config.yaml$(NC)"
+	@set -a; . ./$(ENV_FILE); set +a; envsubst < ./config.template.yml > ./config.yml
+	@echo "$(GREEN)Configuration generated at ./config.yml$(NC)"
 
-.PHONY: config-debug
-config-debug: check-env ## Debug config generation with verbose output
-	@echo "$(YELLOW)=== CONFIG GENERATION DEBUG ===$(NC)"
-	@echo "$(YELLOW)1. Checking files...$(NC)"
-	@ls -la .env config.yaml.template 2>/dev/null || echo "$(RED)Some files missing$(NC)"
-	@echo "$(YELLOW)2. Environment variables from .env:$(NC)"
-	@grep -v '^#' .env | grep -v '^$$' | head -10
-	@echo "$(YELLOW)3. Testing variable export...$(NC)"
-	@set -a; . ./.env; set +a; echo "SERVICE_NAME=$$SERVICE_NAME, SERVER_PORT=$$SERVER_PORT"
-	@echo "$(YELLOW)4. Generating config...$(NC)"
-	@set -a; . ./.env; set +a; envsubst < ./config.yaml.template > ./config.yaml
-	@echo "$(GREEN)5. Done! First few lines of generated config:$(NC)"
-	@head -10 config.yaml
+.PHONY: reconfig
+reconfig: ## Force regenerate config with current .env values
+	@if command -v envsubst >/dev/null 2>&1; then \
+		set -a && . ./.env && set +a && envsubst < config.template.yml > config.yml; \
+		echo "$(GREEN)Config file regenerated with current environment variables.$(NC)"; \
+	else \
+		echo "$(RED)envsubst not found. Please install gettext package.$(NC)"; \
+		echo "On Ubuntu/Debian: sudo apt-get install gettext-base"; \
+		echo "On macOS: brew install gettext"; \
+		exit 1; \
+	fi
 
 ## Build
 .PHONY: build
 build: config ## Build the application binary
 	@echo "$(YELLOW)Building $(BINARY_NAME)...$(NC)"
-	@CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build \
+	@CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) GO111MODULE=on go build \
 		-ldflags="-w -s -X main.version=$(VERSION) -extldflags '-static'" \
 		-a -installsuffix cgo \
 		-o $(BINARY_NAME) \
@@ -107,63 +102,67 @@ build: config ## Build the application binary
 .PHONY: run
 run: config ## Run the application locally
 	@echo "$(YELLOW)Starting SAI Storage locally...$(NC)"
-	@if [ ! -f "./config.yaml" ]; then \
+	@if [ ! -f "./config.yml" ]; then \
 		echo "$(RED)Configuration not found. Generating...$(NC)"; \
 		$(MAKE) config; \
 	fi
 	@go run ./cmd/main.go
 
 ## Docker
-.PHONY: docker-build
-docker-build: ## Build Docker image
-	@echo "$(YELLOW)Building Docker image $(DOCKER_IMAGE):$(DOCKER_TAG)...$(NC)"
-	@docker build -t $(DOCKER_IMAGE):$(DOCKER_TAG) .
-	@echo "$(GREEN)Docker image built: $(DOCKER_IMAGE):$(DOCKER_TAG)$(NC)"
-
-.PHONY: docker-run
-docker-run: check-env ## Run Docker container
-	@echo "$(YELLOW)Running Docker container...$(NC)"
-	@docker run --rm --env-file .env -p 8080:8080 $(DOCKER_IMAGE):$(DOCKER_TAG)
+.PHONY: docker
+docker: config ## Build and start all services with docker compose
+	@echo "$(YELLOW)Building and starting all services...$(NC)"
+	@docker compose up -d
+	@echo "$(GREEN)All services started!$(NC)"
 
 ## Docker Compose
 .PHONY: up
-up: check-env ## Start all services with docker-compose
+up: env ## Start all services with docker compose
 	@echo "$(YELLOW)Starting all services...$(NC)"
-	@docker-compose up -d
+	@docker compose up -d
 	@echo "$(GREEN)Services started!$(NC)"
 
 .PHONY: down
 down: ## Stop all services
 	@echo "$(YELLOW)Stopping all services...$(NC)"
-	@docker-compose down
+	@docker compose down
 	@echo "$(GREEN)Services stopped!$(NC)"
+
+.PHONY: restart
+restart: clean-all ## Clean, rebuild and restart all services
+	@echo "$(YELLOW)Restarting services with full rebuild...$(NC)"
+	@docker compose down -v
+	@docker compose build --no-cache
+	@docker compose up -d
+	@echo "$(GREEN)Services restarted with full rebuild!$(NC)"
 
 .PHONY: logs
 logs: ## Show logs from all services
-	@docker-compose logs -f
+	@docker compose logs -f sai-storage
 
 .PHONY: logs-app
 logs-app: ## Show logs from application only
-	@docker-compose logs -f sai-storage
+	@docker compose logs -f
 
 .PHONY: logs-mongo
 logs-mongo: ## Show logs from MongoDB only
-	@docker-compose logs -f mongodb
+	@docker compose logs -f mongodb
 
-.PHONY: restart
-restart: down up ## Restart all services
+.PHONY: logs-mongo-express
+logs-mongo-express: ## Show logs from Mongo Express only
+	@docker compose logs -f mongo-express
 
-.PHONY: rebuild
-rebuild: check-env ## Rebuild and restart all services
-	@echo "$(YELLOW)Rebuilding and restarting services...$(NC)"
-	@docker-compose down
-	@docker-compose build --no-cache
-	@docker-compose up -d
-	@echo "$(GREEN)Services rebuilt and restarted!$(NC)"
+.PHONY: logs-redis
+logs-redis: ## Show logs from Redis only
+	@docker compose logs -f redis
+
+.PHONY: logs-redis-commander
+logs-redis-commander: ## Show logs from Redis Commander only
+	@docker compose logs -f redis-commander
 
 ## Database
 .PHONY: mongo-shell
-mongo-shell: check-env ## Connect to MongoDB shell
+mongo-shell: env ## Connect to MongoDB shell
 	@echo "$(YELLOW)Connecting to MongoDB shell...$(NC)"
 	@set -a && . ./.env && set +a && \
 		docker exec -it sai-storage-mongodb mongosh \
@@ -186,9 +185,33 @@ mongo-reset: ## Reset MongoDB data (WARNING: This will delete all data!)
 	@echo "$(RED)WARNING: This will delete all MongoDB data!$(NC)"
 	@read -p "Are you sure? (y/N): " confirm && [ "$$confirm" = "y" ]
 	@echo "$(YELLOW)Stopping services and removing MongoDB data...$(NC)"
-	@docker-compose down
+	@docker compose down
 	@docker volume rm sai-storage_mongodb_data || true
 	@echo "$(GREEN)MongoDB data reset complete!$(NC)"
+
+.PHONY: redis-cli
+redis-cli: env ## Connect to Redis CLI
+	@echo "$(YELLOW)Connecting to Redis CLI...$(NC)"
+	@docker exec -it redis redis-cli
+
+.PHONY: redis-commander
+redis-commander: ## Open Redis Commander in browser
+	@echo "$(YELLOW)Opening Redis Commander...$(NC)"
+	@echo "$(GREEN)Redis Commander should be available at: http://localhost:8084$(NC)"
+	@if command -v open >/dev/null 2>&1; then \
+		open http://localhost:8084; \
+	elif command -v xdg-open >/dev/null 2>&1; then \
+		xdg-open http://localhost:8084; \
+	fi
+
+.PHONY: redis-reset
+redis-reset: ## Reset Redis data (WARNING: This will delete all data!)
+	@echo "$(RED)WARNING: This will delete all Redis data!$(NC)"
+	@read -p "Are you sure? (y/N): " confirm && [ "$$confirm" = "y" ]
+	@echo "$(YELLOW)Stopping services and removing Redis data...$(NC)"
+	@docker compose down
+	@docker volume rm sai-storage_redis_data || true
+	@echo "$(GREEN)Redis data reset complete!$(NC)"
 
 ## Code Quality
 .PHONY: lint
@@ -211,25 +234,6 @@ vet: ## Run go vet
 	@echo "$(YELLOW)Running go vet...$(NC)"
 	@go vet ./...
 
-.PHONY: mod-tidy
-mod-tidy: ## Tidy Go modules
-	@echo "$(YELLOW)Tidying Go modules...$(NC)"
-	@go mod tidy
-	@echo "$(GREEN)Modules tidied!$(NC)"
-
-## Testing
-.PHONY: test
-test: ## Run tests
-	@echo "$(YELLOW)Running tests...$(NC)"
-	@go test -v ./...
-
-.PHONY: test-coverage
-test-coverage: ## Run tests with coverage
-	@echo "$(YELLOW)Running tests with coverage...$(NC)"
-	@go test -v -coverprofile=coverage.out ./...
-	@go tool cover -html=coverage.out -o coverage.html
-	@echo "$(GREEN)Coverage report generated: coverage.html$(NC)"
-
 ## Cleanup
 .PHONY: clean
 clean: ## Clean build artifacts and generated files
@@ -237,14 +241,13 @@ clean: ## Clean build artifacts and generated files
 	@rm -rf $(BUILD_DIR)
 	@rm -f $(BINARY_NAME)
 	@rm -f coverage.out coverage.html
-	@rm -f config.yaml
+	@rm -f config.yml
 	@echo "$(GREEN)Cleanup complete!$(NC)"
 
 .PHONY: clean-docker
 clean-docker: ## Clean Docker images and volumes
 	@echo "$(YELLOW)Cleaning Docker resources...$(NC)"
-	@docker-compose down -v --remove-orphans
-	@docker system prune -f
+	@docker compose down -v --remove-orphans
 	@echo "$(GREEN)Docker cleanup complete!$(NC)"
 
 .PHONY: clean-all
@@ -254,7 +257,7 @@ clean-all: clean clean-docker ## Clean everything
 .PHONY: status
 status: ## Show status of all services
 	@echo "$(YELLOW)Service status:$(NC)"
-	@docker-compose ps
+	@docker compose ps
 
 .PHONY: health
 health: ## Check health of the application
@@ -266,13 +269,3 @@ version: ## Show version information
 	@echo "$(GREEN)SAI Storage Microservice$(NC)"
 	@echo "Version: $(VERSION)"
 	@echo "Go Version: $(GO_VERSION)"
-
-# Ensure required tools are available
-.PHONY: check-tools
-check-tools: ## Check if required tools are available
-	@echo "$(YELLOW)Checking required tools...$(NC)"
-	@command -v go >/dev/null 2>&1 || (echo "$(RED)Go is not installed$(NC)" && exit 1)
-	@command -v docker >/dev/null 2>&1 || (echo "$(RED)Docker is not installed$(NC)" && exit 1)
-	@command -v docker-compose >/dev/null 2>&1 || (echo "$(RED)Docker Compose is not installed$(NC)" && exit 1)
-	@command -v envsubst >/dev/null 2>&1 || (echo "$(RED)envsubst is not installed$(NC)" && exit 1)
-	@echo "$(GREEN)All required tools are available!$(NC)"

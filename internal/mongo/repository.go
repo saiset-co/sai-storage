@@ -95,6 +95,14 @@ func (r *Repository) ReadDocuments(ctx context.Context, request types.ReadDocume
 		findOptions.SetSkip(int64(request.Skip))
 	}
 
+	if len(request.Fields) > 0 {
+		projection := make(map[string]int)
+		for _, field := range request.Fields {
+			projection[field] = 1
+		}
+		findOptions.SetProjection(projection)
+	}
+
 	cursor, err := coll.Find(ctx, request.Filter, findOptions)
 	if err != nil {
 		return nil, 0, saiTypes.WrapError(err, "failed to find documents")

@@ -11,6 +11,7 @@ type ReadDocumentsRequest struct {
 	Sort       map[string]int         `json:"sort,omitempty"`
 	Limit      int                    `json:"limit,omitempty"`
 	Skip       int                    `json:"skip,omitempty"`
+	Fields     []string               `json:"fields,omitempty"`
 }
 
 type UpdateDocumentsRequest struct {

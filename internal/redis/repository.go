@@ -53,8 +53,13 @@ func (r *Repository) CreateDocuments(ctx context.Context, request types.CreateDo
 			return nil, saiTypes.NewError("data must be a map")
 		}
 
-		internalID := uuid.New().String()
-		dataMap["internal_id"] = internalID
+		var internalID string
+		if existingID, exists := dataMap["internal_id"]; exists && existingID != nil && existingID.(string) != "" {
+			internalID = existingID.(string)
+		} else {
+			internalID = uuid.New().String()
+			dataMap["internal_id"] = internalID
+		}
 		dataMap["cr_time"] = now
 		dataMap["ch_time"] = now
 
@@ -183,8 +188,10 @@ func (r *Repository) UpdateDocuments(ctx context.Context, request types.UpdateDo
 			return 0, err
 		}
 
-		// Set timestamps
-		newDoc["internal_id"] = uuid.New().String()
+		// Set internal_id if not already present
+		if newDoc["internal_id"] == nil || newDoc["internal_id"].(string) == "" {
+			newDoc["internal_id"] = uuid.New().String()
+		}
 		newDoc["cr_time"] = now
 		newDoc["ch_time"] = now
 
@@ -444,13 +451,17 @@ func (r *Repository) applyUpdateOperations(doc map[string]interface{}, update in
 		case "$set":
 			if setMap, ok := value.(map[string]interface{}); ok {
 				for key, val := range setMap {
-					doc[key] = val
+					if key != "internal_id" {
+						doc[key] = val
+					}
 				}
 			}
 		case "$unset":
 			if unsetMap, ok := value.(map[string]interface{}); ok {
 				for key := range unsetMap {
-					delete(doc, key)
+					if key != "internal_id" && key != "cr_time" {
+						delete(doc, key)
+					}
 				}
 			}
 		case "$inc":
@@ -468,8 +479,10 @@ func (r *Repository) applyUpdateOperations(doc map[string]interface{}, update in
 				}
 			}
 		default:
-			// Direct field assignment
-			doc[op] = value
+			// Direct field assignment (protect internal_id)
+			if op != "internal_id" {
+				doc[op] = value
+			}
 		}
 	}
 

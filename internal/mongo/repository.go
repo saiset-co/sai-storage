@@ -48,7 +48,9 @@ func (r *Repository) CreateDocuments(ctx context.Context, request types.CreateDo
 
 	for _, data := range request.Data {
 		now := time.Now().UnixNano() + atomic.AddInt64(&counter, 1)
-		data.(map[string]interface{})["internal_id"] = uuid.New().String()
+		if dataMap := data.(map[string]interface{}); dataMap["internal_id"] == nil || dataMap["internal_id"] == "" {
+			dataMap["internal_id"] = uuid.New().String()
+		}
 		data.(map[string]interface{})["cr_time"] = now
 		data.(map[string]interface{})["ch_time"] = now
 	}
@@ -130,11 +132,31 @@ func (r *Repository) UpdateDocuments(ctx context.Context, request types.UpdateDo
 	if data, ok := request.Data.(map[string]interface{}); ok {
 		if setOp, exists := data["$set"]; exists {
 			if setMap, ok := setOp.(map[string]interface{}); ok {
+				delete(setMap, "internal_id")
 				setMap["ch_time"] = time.Now().UnixNano() + atomic.AddInt64(&counter, 1)
+				if request.Upsert {
+					if setMap["internal_id"] == nil || setMap["internal_id"] == "" {
+						setMap["internal_id"] = uuid.New().String()
+					}
+					if setMap["cr_time"] == nil {
+						setMap["cr_time"] = setMap["ch_time"]
+					}
+				}
 			}
 		} else {
-			data["$set"] = map[string]interface{}{
+			updateData := map[string]interface{}{
 				"ch_time": time.Now().UnixNano() + atomic.AddInt64(&counter, 1),
+			}
+			if request.Upsert {
+				updateData["internal_id"] = uuid.New().String()
+				updateData["cr_time"] = updateData["ch_time"]
+			}
+			data["$set"] = updateData
+		}
+		
+		if setOnInsert, exists := data["$setOnInsert"]; exists {
+			if setOnInsertMap, ok := setOnInsert.(map[string]interface{}); ok {
+				delete(setOnInsertMap, "internal_id")
 			}
 		}
 	}

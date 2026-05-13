@@ -48,14 +48,16 @@ func (r *Repository) CreateDocuments(ctx context.Context, request types.CreateDo
 
 	for i, data := range request.Data {
 		// Generate internal_id if not provided
-		dataMap, ok := data.(map[string]interface{})
-		if !ok {
-			return nil, saiTypes.NewError("data must be a map")
+		dataMap, err := normalizeDocumentMap(data)
+		if err != nil {
+			return nil, err
 		}
 
 		var internalID string
-		if existingID, exists := dataMap["internal_id"]; exists && existingID != nil && existingID.(string) != "" {
-			internalID = existingID.(string)
+		if existingID, exists := dataMap["internal_id"]; exists && existingID != nil {
+			if existingIDStr, ok := existingID.(string); ok && existingIDStr != "" {
+				internalID = existingIDStr
+			}
 		} else {
 			internalID = uuid.New().String()
 			dataMap["internal_id"] = internalID
@@ -71,7 +73,7 @@ func (r *Repository) CreateDocuments(ctx context.Context, request types.CreateDo
 
 		// Store document with key: collection:internal_id
 		key := r.documentKey(request.Collection, internalID)
-		
+
 		// Check if TTL is specified in data
 		var ttl time.Duration
 		if ttlValue, exists := dataMap["ttl"]; exists {
@@ -106,7 +108,7 @@ func (r *Repository) ReadDocuments(ctx context.Context, request types.ReadDocume
 	}
 
 	var results []map[string]interface{}
-	
+
 	for _, key := range keys {
 		jsonData, err := r.client.Get(ctx, key)
 		if err != nil {
@@ -137,7 +139,7 @@ func (r *Repository) ReadDocuments(ctx context.Context, request types.ReadDocume
 		}
 	}
 
-	total := int64(len(results))
+	totalFull := int64(len(results))
 
 	// Apply sorting if specified
 	if request.Sort != nil && len(request.Sort) > 0 {
@@ -147,7 +149,10 @@ func (r *Repository) ReadDocuments(ctx context.Context, request types.ReadDocume
 	// Apply pagination
 	if request.Skip > 0 {
 		if request.Skip >= len(results) {
-			return []map[string]interface{}{}, total, nil
+			if request.Count > 0 {
+				return []map[string]interface{}{}, totalFull, nil
+			}
+			return []map[string]interface{}{}, 0, nil
 		}
 		results = results[request.Skip:]
 	}
@@ -156,7 +161,105 @@ func (r *Repository) ReadDocuments(ctx context.Context, request types.ReadDocume
 		results = results[:request.Limit]
 	}
 
-	return results, total, nil
+	if request.Count > 0 {
+		return results, totalFull, nil
+	}
+
+	return results, int64(len(results)), nil
+}
+
+func (r *Repository) AggregateDocuments(ctx context.Context, request types.AggregateDocumentsRequest) ([]map[string]interface{}, int64, error) {
+	// Read all docs with filter for aggregation
+	readRequest := types.ReadDocumentsRequest{
+		Collection: request.Collection,
+		Filter:     request.Filter,
+	}
+
+	docs, _, err := r.ReadDocuments(ctx, readRequest)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// If no aggregation specified, fall back to ReadDocuments semantics
+	if len(request.GroupBy) == 0 && len(request.Aggregates) == 0 {
+		readRequest.Fields = request.Fields
+		readRequest.Sort = request.Sort
+		readRequest.Limit = request.Limit
+		readRequest.Skip = request.Skip
+		return r.ReadDocuments(ctx, readRequest)
+	}
+
+	groups := make(map[string]*aggregateGroup)
+
+	for _, doc := range docs {
+		groupKey := "__all__"
+		groupValues := make(map[string]interface{})
+
+		if len(request.GroupBy) > 0 {
+			keyParts := make([]string, 0, len(request.GroupBy))
+			for _, field := range request.GroupBy {
+				val, _ := r.getFieldValue(doc, field)
+				groupValues[field] = val
+				keyParts = append(keyParts, fmt.Sprintf("%v", val))
+			}
+			groupKey = strings.Join(keyParts, "|")
+		}
+
+		group := groups[groupKey]
+		if group == nil {
+			group = newAggregateGroup(groupValues, request.Aggregates)
+			groups[groupKey] = group
+		}
+
+		group.apply(doc, r)
+	}
+
+	results := make([]map[string]interface{}, 0, len(groups))
+	for _, group := range groups {
+		results = append(results, group.result())
+	}
+
+	if request.Sort != nil && len(request.Sort) > 0 {
+		r.sortDocuments(results, request.Sort)
+	}
+
+	totalFull := int64(len(results))
+
+	// Apply pagination
+	if request.Skip > 0 {
+		if request.Skip >= len(results) {
+			if request.Count > 0 {
+				return []map[string]interface{}{}, totalFull, nil
+			}
+			return []map[string]interface{}{}, 0, nil
+		}
+		results = results[request.Skip:]
+	}
+
+	if request.Limit > 0 && request.Limit < len(results) {
+		results = results[:request.Limit]
+	}
+
+	// Apply field filtering if specified
+	if len(request.Fields) > 0 {
+		filtered := make([]map[string]interface{}, 0, len(results))
+		for _, doc := range results {
+			item := make(map[string]interface{})
+			for _, field := range request.Fields {
+				if value, exists := doc[field]; exists {
+					item[field] = value
+				}
+			}
+			filtered = append(filtered, item)
+		}
+		results = filtered
+	}
+
+	if request.Count > 0 {
+		return results, totalFull, nil
+	}
+
+	return results, int64(len(results)), nil
 }
 
 func (r *Repository) UpdateDocuments(ctx context.Context, request types.UpdateDocumentsRequest) (int64, error) {
@@ -182,7 +285,7 @@ func (r *Repository) UpdateDocuments(ctx context.Context, request types.UpdateDo
 	if len(docs) == 0 && request.Upsert {
 		// Create new document
 		newDoc := make(map[string]interface{})
-		
+
 		// Apply update operations
 		if err := r.applyUpdateOperations(newDoc, request.Data); err != nil {
 			return 0, err
@@ -397,7 +500,7 @@ func (r *Repository) compareValues(docValue, filterValue interface{}) bool {
 func (r *Repository) compareNumbers(a, b interface{}, op string) bool {
 	aVal, aOk := r.toFloat64(a)
 	bVal, bOk := r.toFloat64(b)
-	
+
 	if !aOk || !bOk {
 		return false
 	}
@@ -440,9 +543,144 @@ func (r *Repository) sortDocuments(docs []map[string]interface{}, sort map[strin
 	// This is a basic implementation for demonstration
 }
 
+func (r *Repository) getFieldValue(doc map[string]interface{}, field string) (interface{}, bool) {
+	keys := strings.Split(field, ".")
+	current := doc
+
+	for i, k := range keys {
+		val, exists := current[k]
+		if !exists {
+			return nil, false
+		}
+
+		if i == len(keys)-1 {
+			return val, true
+		}
+
+		next, ok := val.(map[string]interface{})
+		if !ok {
+			return nil, false
+		}
+		current = next
+	}
+
+	return nil, false
+}
+
+type aggregateGroup struct {
+	values map[string]interface{}
+	aggs   map[string]*aggregateState
+}
+
+type aggregateState struct {
+	op       string
+	field    string
+	count    int64
+	sum      float64
+	min      float64
+	max      float64
+	hasValue bool
+}
+
+func newAggregateGroup(values map[string]interface{}, aggregates []types.AggregateField) *aggregateGroup {
+	aggs := make(map[string]*aggregateState)
+	for _, agg := range aggregates {
+		name := agg.As
+		if name == "" {
+			if agg.Op == "count" {
+				name = "count"
+			} else if agg.Field != "" {
+				name = fmt.Sprintf("%s_%s", agg.Op, agg.Field)
+			} else {
+				name = agg.Op
+			}
+		}
+		aggs[name] = &aggregateState{
+			op:    strings.ToLower(agg.Op),
+			field: agg.Field,
+		}
+	}
+
+	return &aggregateGroup{
+		values: values,
+		aggs:   aggs,
+	}
+}
+
+func (g *aggregateGroup) apply(doc map[string]interface{}, r *Repository) {
+	for _, state := range g.aggs {
+		switch state.op {
+		case "count":
+			state.count++
+		case "sum", "avg", "min", "max":
+			if state.field == "" {
+				continue
+			}
+			val, ok := r.getFieldValue(doc, state.field)
+			if !ok {
+				continue
+			}
+			num, ok := r.toFloat64(val)
+			if !ok {
+				continue
+			}
+			state.count++
+			state.sum += num
+			if !state.hasValue {
+				state.min = num
+				state.max = num
+				state.hasValue = true
+				continue
+			}
+			if num < state.min {
+				state.min = num
+			}
+			if num > state.max {
+				state.max = num
+			}
+		}
+	}
+}
+
+func (g *aggregateGroup) result() map[string]interface{} {
+	out := make(map[string]interface{})
+	for key, value := range g.values {
+		out[key] = value
+	}
+
+	for name, state := range g.aggs {
+		switch state.op {
+		case "count":
+			out[name] = state.count
+		case "sum":
+			out[name] = state.sum
+		case "avg":
+			if state.count == 0 {
+				out[name] = 0
+			} else {
+				out[name] = state.sum / float64(state.count)
+			}
+		case "min":
+			if state.hasValue {
+				out[name] = state.min
+			} else {
+				out[name] = nil
+			}
+		case "max":
+			if state.hasValue {
+				out[name] = state.max
+			} else {
+				out[name] = nil
+			}
+		}
+	}
+
+	return out
+}
+
 func (r *Repository) applyUpdateOperations(doc map[string]interface{}, update interface{}) error {
-	updateMap, ok := update.(map[string]interface{})
-	if !ok {
+	updateMap, err := normalizeDocumentMap(update)
+	if err != nil {
 		return saiTypes.NewError("update data must be a map")
 	}
 
@@ -452,7 +690,7 @@ func (r *Repository) applyUpdateOperations(doc map[string]interface{}, update in
 			if setMap, ok := value.(map[string]interface{}); ok {
 				for key, val := range setMap {
 					if key != "internal_id" {
-						doc[key] = val
+						doc[key] = normalizeNestedValue(val)
 					}
 				}
 			}
@@ -481,10 +719,54 @@ func (r *Repository) applyUpdateOperations(doc map[string]interface{}, update in
 		default:
 			// Direct field assignment (protect internal_id)
 			if op != "internal_id" {
-				doc[op] = value
+				doc[op] = normalizeNestedValue(value)
 			}
 		}
 	}
 
 	return nil
+}
+
+func normalizeDocumentMap(data interface{}) (map[string]interface{}, error) {
+	if data == nil {
+		return nil, saiTypes.NewError("data must be a map")
+	}
+
+	if dataMap, ok := data.(map[string]interface{}); ok {
+		return normalizeNestedMap(dataMap), nil
+	}
+
+	raw, err := json.Marshal(data)
+	if err != nil {
+		return nil, saiTypes.WrapError(err, "failed to marshal document")
+	}
+
+	var dataMap map[string]interface{}
+	if err := json.Unmarshal(raw, &dataMap); err != nil {
+		return nil, saiTypes.NewError("data must be a map")
+	}
+
+	return normalizeNestedMap(dataMap), nil
+}
+
+func normalizeNestedMap(data map[string]interface{}) map[string]interface{} {
+	normalized := make(map[string]interface{}, len(data))
+	for key, value := range data {
+		normalized[key] = normalizeNestedValue(value)
+	}
+	return normalized
+}
+
+func normalizeNestedValue(value interface{}) interface{} {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return value
+	}
+
+	var normalized interface{}
+	if err := json.Unmarshal(raw, &normalized); err != nil {
+		return value
+	}
+
+	return normalized
 }

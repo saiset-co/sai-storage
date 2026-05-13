@@ -20,7 +20,13 @@ type RedisConfig struct {
 }
 
 type StorageManagerConfig struct {
-	Type  string        `yaml:"type" json:"type"`
-	Mongo StorageConfig `yaml:"mongo" json:"mongo"`
-	Redis RedisConfig   `yaml:"redis" json:"redis"`
+	Type     string                `yaml:"type" json:"type"`
+	Mongo    StorageConfig         `yaml:"mongo" json:"mongo"`
+	Redis    RedisConfig           `yaml:"redis" json:"redis"`
+	Features StorageFeaturesConfig `yaml:"features" json:"features"`
+}
+
+type StorageFeaturesConfig struct {
+	LogRequests    bool `yaml:"log_requests" json:"log_requests"`
+	ArchiveChanges bool `yaml:"archive_changes" json:"archive_changes"`
 }

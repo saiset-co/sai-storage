@@ -57,7 +57,10 @@ func initializeComponents() (err error) {
 		}
 	}
 
-	storageService := serviceLayer.NewStorageService(repo)
+	var features types.StorageFeaturesConfig
+	_ = sai.Config().GetAs("storage.features", &features)
+
+	storageService := serviceLayer.NewStorageService(repo, features)
 	handler := handlers.NewHandler(storageService)
 
 	documents := sai.Router().Group("/api/v1").Group("/documents")
@@ -67,6 +70,9 @@ func initializeComponents() (err error) {
 
 	documents.GET("/", handler.ReadDocuments).
 		WithDoc("Get Documents", "Get documents with filtering and pagination. Add ?count=1 to include total count", "documents", &types.ReadDocumentsRequest{}, &types.ReadDocumentsResponse{})
+
+	documents.POST("/aggregate", handler.AggregateDocuments).
+		WithDoc("Aggregate Documents", "Aggregate documents in a collection", "documents", &types.AggregateDocumentsRequest{}, &types.AggregateDocumentsResponse{})
 
 	documents.PUT("/", handler.UpdateDocuments).
 		WithDoc("Update Documents", "Update multiple documents by filter", "documents", &types.UpdateDocumentsRequest{}, &types.UpdateDocumentsResponse{})

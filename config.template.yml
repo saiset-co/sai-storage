@@ -58,6 +58,9 @@ docs:
 
 storage:
   type: "${DATABASE_TYPE}"
+  features:
+    log_requests: ${STORAGE_LOG_REQUESTS}
+    archive_changes: ${STORAGE_ARCHIVE_CHANGES}
   mongo:
     connection_string: "${MONGODB_CONNECTION_STRING}"
     database: "${MONGO_DATABASE}"

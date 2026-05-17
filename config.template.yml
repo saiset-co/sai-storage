@@ -58,6 +58,7 @@ docs:
 
 storage:
   type: "${DATABASE_TYPE}"
+  path: "${DATABASE_PATH}"
   features:
     log_requests: ${STORAGE_LOG_REQUESTS}
     archive_changes: ${STORAGE_ARCHIVE_CHANGES}

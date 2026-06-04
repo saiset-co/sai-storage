@@ -19,6 +19,7 @@ auth_providers:
     params:
       username: "${USERNAME}"
       password: "${PASSWORD}"
+      cookie_ttl_hours: ${COOKIE_TTL_HOURS}
   token:
     params:
       token: "${TOKEN}"

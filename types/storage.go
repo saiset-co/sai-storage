@@ -11,4 +11,12 @@ type StorageRepository interface {
 	UpdateDocuments(ctx context.Context, request UpdateDocumentsRequest) (int64, error)
 	DeleteDocuments(ctx context.Context, request DeleteDocumentsRequest) (int64, error)
 	Close(ctx context.Context) error
+
+	GetAdminCollectionStats(ctx context.Context) ([]CollectionStats, error)
+	ListCollectionNames(ctx context.Context) ([]string, error)
+	ListIndexes(ctx context.Context, collection string) ([]IndexInfo, error)
+	CreateIndex(ctx context.Context, req CreateIndexRequest) error
+	GetSlowQueries(ctx context.Context, limit int) ([]SlowQuery, error)
+	LogSlowQuery(ctx context.Context, collection, operation string, durationMs, docsCount int64, filterKeys []string) error
+	GetArchiveGroups(ctx context.Context, collection string, skip, limit int) ([]ArchiveGroup, int64, error)
 }

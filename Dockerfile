@@ -4,11 +4,11 @@ RUN apk add --no-cache git ca-certificates tzdata gcc musl-dev
 
 WORKDIR /build
 
-COPY go.mod go.sum ./
+COPY ./sai-storage/go.mod ./sai-storage/go.sum ./
 
 RUN go mod download
 
-COPY . .
+COPY ./sai-storage .
 
 RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build \
     -ldflags='-w -s -extldflags "-static"' \

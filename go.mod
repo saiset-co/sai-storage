@@ -6,10 +6,11 @@ require (
 	github.com/go-playground/validator/v10 v10.27.0
 	github.com/google/uuid v1.6.0
 	github.com/redis/go-redis/v9 v9.11.0
-	github.com/saiset-co/sai-service v1.1.3
+	github.com/saiset-co/sai-service v1.1.11
 	github.com/valyala/fasthttp v1.64.0
 	go.mongodb.org/mongo-driver v1.17.4
 	go.uber.org/zap v1.27.0
+	golang.org/x/sync v0.16.0
 )
 
 require (
@@ -59,7 +60,6 @@ require (
 	golang.org/x/arch v0.19.0 // indirect
 	golang.org/x/crypto v0.40.0 // indirect
 	golang.org/x/net v0.42.0 // indirect
-	golang.org/x/sync v0.16.0 // indirect
 	golang.org/x/sys v0.34.0 // indirect
 	golang.org/x/text v0.27.0 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect

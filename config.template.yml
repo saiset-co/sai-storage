@@ -62,6 +62,8 @@ storage:
   features:
     log_requests: ${STORAGE_LOG_REQUESTS}
     archive_changes: ${STORAGE_ARCHIVE_CHANGES}
+    track_query_stats: ${STORAGE_TRACK_QUERY_STATS}
+    slow_query_threshold_ms: ${STORAGE_SLOW_QUERY_THRESHOLD_MS}
   mongo:
     connection_string: "${MONGODB_CONNECTION_STRING}"
     database: "${MONGO_DATABASE}"

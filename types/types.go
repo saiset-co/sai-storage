@@ -27,6 +27,8 @@ type StorageManagerConfig struct {
 }
 
 type StorageFeaturesConfig struct {
-	LogRequests    bool `yaml:"log_requests" json:"log_requests"`
-	ArchiveChanges bool `yaml:"archive_changes" json:"archive_changes"`
+	LogRequests          bool `yaml:"log_requests" json:"log_requests"`
+	ArchiveChanges       bool `yaml:"archive_changes" json:"archive_changes"`
+	TrackQueryStats      bool `yaml:"track_query_stats" json:"track_query_stats"`
+	SlowQueryThresholdMs int  `yaml:"slow_query_threshold_ms" json:"slow_query_threshold_ms"`
 }

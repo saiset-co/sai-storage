@@ -131,8 +131,8 @@ down: ## Stop all services
 .PHONY: restart
 restart: clean-all ## Clean, rebuild and restart all services
 	@echo "$(YELLOW)Restarting services with full rebuild...$(NC)"
+	@docker compose build
 	@docker compose down -v
-	@docker compose build --no-cache
 	@docker compose up -d
 	@echo "$(GREEN)Services restarted with full rebuild!$(NC)"
 

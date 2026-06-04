@@ -7,6 +7,7 @@ import (
 
 	"github.com/saiset-co/sai-service/sai"
 	"github.com/saiset-co/sai-service/service"
+	internal "github.com/saiset-co/sai-storage/internal"
 	"github.com/saiset-co/sai-storage/internal/handlers"
 	"github.com/saiset-co/sai-storage/internal/mongo"
 	"github.com/saiset-co/sai-storage/internal/redis"
@@ -32,8 +33,6 @@ func main() {
 		sai.Logger().Error("Failed to start service", zap.Error(err))
 		cancel()
 	}
-
-	return
 }
 
 func initializeComponents() (err error) {
@@ -79,6 +78,9 @@ func initializeComponents() (err error) {
 
 	documents.DELETE("/", handler.DeleteDocuments).
 		WithDoc("Delete Documents", "Delete multiple documents by filter", "documents", &types.DeleteDocumentsRequest{}, &types.DeleteDocumentsResponse{})
+
+	storageService.LoadSettings(context.Background())
+	internal.SetupAdmin(storageService, handler)
 
 	return nil
 }

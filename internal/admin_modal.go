@@ -37,7 +37,7 @@ func modalScript() string {
 		`var btn=document.getElementById(btnID),err=document.getElementById(errID);` +
 		`var orig=btn.textContent;` +
 		`err.style.display='none';btn.disabled=true;btn.textContent='...';` +
-		`fetch(action,{method:'POST',headers:{'X-Requested-With':'fetch'},body:new FormData(e.target)})` +
+		`fetch(window.location.origin+action,{method:'POST',headers:{'X-Requested-With':'fetch'},body:new FormData(e.target)})` +
 		`.then(function(r){return r.json();})` +
 		`.then(function(d){btn.disabled=false;btn.textContent=orig;` +
 		`if(d.ok){if(modalID)_closeModal(modalID,formID,errID);location.reload();}` +

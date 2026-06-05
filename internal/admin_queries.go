@@ -587,7 +587,7 @@ func clearBtn(action, label string) string {
 		`<script>if(!window._clearAll){window._clearAll=function(url,btn){` +
 		`if(!confirm('Удалить все записи?'))return;` +
 		`btn.disabled=true;` +
-		`fetch(url,{method:'POST',headers:{'X-Requested-With':'fetch'}})` +
+		`fetch(window.location.origin+url,{method:'POST',headers:{'X-Requested-With':'fetch'}})` +
 		`.then(function(r){return r.json();})` +
 		`.then(function(d){if(d.ok){location.reload();}else{btn.disabled=false;alert(d.error||'Ошибка');}})` +
 		`.catch(function(){btn.disabled=false;alert('Ошибка сети');});}}</script>`
@@ -670,7 +670,7 @@ func indexCreatorScript() string {
 		`fd.append('keys_raw',Object.entries(fields).map(function(e){return e[0]+':'+e[1];}).join(','));` +
 		`if(card.querySelector('.idx-unique').checked)fd.append('unique','true');` +
 		`var nm=card.querySelector('.idx-name').value.trim();if(nm)fd.append('name',nm);` +
-		`try{var r=await fetch('/admin/indexes',{method:'POST',body:fd,headers:{'X-Requested-With':'fetch'}});` +
+		`try{var r=await fetch(window.location.origin+'/admin/indexes',{method:'POST',body:fd,headers:{'X-Requested-With':'fetch'}});` +
 		`var data=await r.json();results.push({i:idx,ok:!data.error,msg:data.error||data.message||'OK'});}` +
 		`catch(e){results.push({i:idx,ok:false,msg:String(e)});}}` +
 		`btn.disabled=false;btn.textContent='Создать все';` +
@@ -833,7 +833,7 @@ func cqDeleteScript() string {
 		`var id=btn.getAttribute('data-id');` +
 		`if(!confirm('Удалить запрос?'))return;` +
 		`var fd=new FormData();fd.append('id',id);` +
-		`fetch('/admin/custom-queries/delete',{method:'POST',headers:{'X-Requested-With':'fetch'},body:fd})` +
+		`fetch(window.location.origin+'/admin/custom-queries/delete',{method:'POST',headers:{'X-Requested-With':'fetch'},body:fd})` +
 		`.then(function(r){return r.json();})` +
 		`.then(function(d){if(d.ok){location.reload();}else{alert(d.error||'Ошибка');}})` +
 		`.catch(function(){alert('Ошибка сети');});};}</script>`
@@ -850,7 +850,7 @@ func customQueryRunScript() string {
 		`document.getElementById('cqRunModal').style.display='flex';` +
 		`document.getElementById('cqRunQueryText').textContent=q;` +
 		`document.getElementById('cqRunContent').innerHTML='<p class="text-slate-500 text-sm">Загрузка...</p>';` +
-		`fetch('/admin/custom-queries/run?query_raw='+encodeURIComponent(q),{headers:{'X-Requested-With':'fetch'}})` +
+		`fetch(window.location.origin+'/admin/custom-queries/run?query_raw='+encodeURIComponent(q),{headers:{'X-Requested-With':'fetch'}})` +
 		`.then(function(r){return r.text();})` +
 		`.then(function(h){document.getElementById('cqRunContent').innerHTML=h;})` +
 		`.catch(function(){document.getElementById('cqRunContent').innerHTML='<p class="text-rose-500 text-sm">Ошибка запроса</p>';});};` +

@@ -56,7 +56,7 @@ func twoColScript() string {
 		`btn.style.background='#eef2ff';btn.style.color='#4338ca';btn.style.fontWeight='600';}` +
 		`var panel=document.getElementById(panelID);` +
 		`panel.innerHTML='<p style="font-size:13px;color:#94a3b8">Загрузка...</p>';` +
-		`fetch(url,{headers:{'X-Requested-With':'fetch'}})` +
+		`fetch(window.location.origin+url,{headers:{'X-Requested-With':'fetch'}})` +
 		`.then(function(r){return r.text();})` +
 		`.then(function(h){panel.innerHTML=h;})` +
 		`.catch(function(){panel.innerHTML='<p style="font-size:13px;color:#ef4444">Ошибка загрузки</p>';});};` +

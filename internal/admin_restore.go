@@ -260,7 +260,7 @@ func archiveDocsScript() string {
 		`btn.disabled=true;btn.textContent='Уже восстановлено';btn.className=btn.className.replace('bg-amber-500','bg-slate-300').replace('hover:bg-amber-400','');` +
 		`}else{` +
 		`btn.disabled=false;btn.textContent='Восстановить '+count+' документов';btn.className='inline-flex h-9 items-center rounded-xl bg-amber-500 px-4 text-sm font-semibold text-white hover:bg-amber-400';}` +
-		`fetch('/admin/archive/docs?collection='+encodeURIComponent(archiveCol)+'&operation_id='+encodeURIComponent(opID),` +
+		`fetch(window.location.origin+'/admin/archive/docs?collection='+encodeURIComponent(archiveCol)+'&operation_id='+encodeURIComponent(opID),` +
 		`{headers:{'X-Requested-With':'fetch'}})` +
 		`.then(function(r){return r.text();})` +
 		`.then(function(h){document.getElementById('archiveDocsContent').innerHTML=h;})` +
@@ -270,7 +270,7 @@ func archiveDocsScript() string {
 		`var form=document.getElementById('archiveRestoreForm');` +
 		`var btn=document.getElementById('archiveRestoreBtn');` +
 		`btn.disabled=true;btn.textContent='...';` +
-		`fetch(form.action,{method:'POST',body:new FormData(form),headers:{'X-Requested-With':'fetch'}})` +
+		`fetch(window.location.origin+form.getAttribute('action'),{method:'POST',body:new FormData(form),headers:{'X-Requested-With':'fetch'}})` +
 		`.then(function(r){return r.json();})` +
 		`.then(function(d){btn.disabled=false;` +
 		`if(d.ok){document.getElementById('archiveDocsModal').style.display='none';location.reload();}` +

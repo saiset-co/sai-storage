@@ -26,7 +26,7 @@ func (r *Repository) GetSlowQueries(ctx context.Context, limit int) ([]types.Slo
 	return nil, nil
 }
 
-func (r *Repository) LogSlowQuery(ctx context.Context, collection, operation string, durationMs, docsCount int64, filterKeys []string, sortKeys map[string]int) error {
+func (r *Repository) LogSlowQuery(ctx context.Context, collection, operation string, durationMs, docsCount int64, filterKeys []string, sortKeys map[string]int, operationID string) error {
 	return nil
 }
 

@@ -39,6 +39,7 @@ func SetupAdmin(storageService *service.StorageService, handler *handlers.Handle
 	adminGroup.GET("/ajax/update-archive", panel.handleAjaxUpdateArchive)
 	adminGroup.GET("/ajax/delete-archive", panel.handleAjaxDeleteArchive)
 	adminGroup.GET("/ajax/request-logs", panel.handleAjaxRequestLogs)
+	adminGroup.GET("/ajax/request-log-body", panel.handleAjaxRequestLogBody)
 	adminGroup.GET("/custom-queries/run", panel.handleRunCustomQuery)
 	adminGroup.POST("/indexes", handler.CreateIndexFromForm)
 	adminGroup.POST("/restore/update", handler.RestoreUpdate)

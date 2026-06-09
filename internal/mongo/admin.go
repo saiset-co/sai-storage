@@ -268,9 +268,9 @@ func (r *Repository) GetArchiveGroups(ctx context.Context, collection, search st
 	return result, total, nil
 }
 
-func (r *Repository) LogSlowQuery(ctx context.Context, collection, operation string, durationMs, docsCount int64, filterKeys []string, sortKeys map[string]int) error {
+func (r *Repository) LogSlowQuery(ctx context.Context, collection, operation string, durationMs, docsCount int64, filterKeys []string, sortKeys map[string]int, operationID string) error {
 	col := r.client.database.Collection("_admin_slow_queries")
-	_, err := col.InsertOne(ctx, bson.M{
+	doc := bson.M{
 		"collection":         collection,
 		"operation":          operation,
 		"duration_ms":        durationMs,
@@ -279,7 +279,11 @@ func (r *Repository) LogSlowQuery(ctx context.Context, collection, operation str
 		"sort_keys":          sortKeys,
 		"filter_fingerprint": slowQueryFingerprint(filterKeys),
 		"ts":                 time.Now().UnixNano(),
-	})
+	}
+	if operationID != "" {
+		doc["operation_id"] = operationID
+	}
+	_, err := col.InsertOne(ctx, doc)
 	return err
 }
 

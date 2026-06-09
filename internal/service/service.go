@@ -84,7 +84,7 @@ func (s *StorageService) CreateDocuments(ctx context.Context, request types.Crea
 	if err != nil {
 		return types.CreateDocumentsResponse{}, saiTypes.WrapError(err, "failed to create documents")
 	}
-	s.afterOp(request.Collection, "create", time.Since(t), int64(len(createdIDs)), nil, nil)
+	s.afterOp(ctx, request.Collection, "create", time.Since(t), int64(len(createdIDs)), nil, nil)
 
 	return types.CreateDocumentsResponse{
 		Data:    createdIDs,
@@ -102,7 +102,7 @@ func (s *StorageService) ReadDocuments(ctx context.Context, request types.ReadDo
 	if err != nil {
 		return types.ReadDocumentsResponse{}, saiTypes.WrapError(err, "failed to get documents")
 	}
-	s.afterOp(request.Collection, "find", time.Since(t), int64(len(documents)), filterKeys(request.Filter), request.Sort)
+	s.afterOp(ctx, request.Collection, "find", time.Since(t), int64(len(documents)), filterKeys(request.Filter), request.Sort)
 
 	return types.ReadDocumentsResponse{
 		Data:  documents,
@@ -120,7 +120,7 @@ func (s *StorageService) AggregateDocuments(ctx context.Context, request types.A
 	if err != nil {
 		return types.AggregateDocumentsResponse{}, saiTypes.WrapError(err, "failed to aggregate documents")
 	}
-	s.afterOp(request.Collection, "aggregate", time.Since(t), int64(len(documents)), matchKeys(request.Pipeline), nil)
+	s.afterOp(ctx, request.Collection, "aggregate", time.Since(t), int64(len(documents)), matchKeys(request.Pipeline), nil)
 
 	return types.AggregateDocumentsResponse{
 		Data:  documents,
@@ -152,7 +152,7 @@ func (s *StorageService) UpdateDocuments(ctx context.Context, request types.Upda
 		s.archiveUpsertInsert(ctx, request)
 	}
 
-	s.afterOp(request.Collection, "update", time.Since(t), updated, filterKeys(request.Filter), nil)
+	s.afterOp(ctx, request.Collection, "update", time.Since(t), updated, filterKeys(request.Filter), nil)
 
 	return types.UpdateDocumentsResponse{
 		Data:    []string{},
@@ -176,7 +176,7 @@ func (s *StorageService) DeleteDocuments(ctx context.Context, request types.Dele
 	if err != nil {
 		return types.DeleteDocumentsResponse{}, saiTypes.WrapError(err, "failed to delete documents")
 	}
-	s.afterOp(request.Collection, "delete", time.Since(t), deleted, filterKeys(request.Filter), nil)
+	s.afterOp(ctx, request.Collection, "delete", time.Since(t), deleted, filterKeys(request.Filter), nil)
 
 	return types.DeleteDocumentsResponse{
 		Data:    []string{},
@@ -184,13 +184,25 @@ func (s *StorageService) DeleteDocuments(ctx context.Context, request types.Dele
 	}, nil
 }
 
-func (s *StorageService) afterOp(collection, operation string, elapsed time.Duration, docsCount int64, fKeys []string, sortKeys map[string]int) {
+func extractOperationID(ctx context.Context) string {
+	if reqCtx, ok := ctx.(*saiTypes.RequestCtx); ok {
+		if v := reqCtx.UserValue("operation_id"); v != nil {
+			if id, ok2 := v.(string); ok2 {
+				return id
+			}
+		}
+	}
+	return ""
+}
+
+func (s *StorageService) afterOp(ctx context.Context, collection, operation string, elapsed time.Duration, docsCount int64, fKeys []string, sortKeys map[string]int) {
+	operationID := extractOperationID(ctx)
 	if s.trackQueryStats && (len(fKeys) > 0 || len(sortKeys) > 0) {
-		s.upsertQueryStat(context.Background(), collection, operation, fKeys, sortKeys)
+		s.upsertQueryStat(collection, operation, fKeys, sortKeys, operationID)
 	}
 	threshold := s.slowQueryThresholdMs.Load()
 	if threshold > 0 && elapsed.Milliseconds() >= threshold && !isAdminCollection(collection) && (len(fKeys) > 0 || len(sortKeys) > 0) {
-		go s.repo.LogSlowQuery(context.Background(), collection, operation, elapsed.Milliseconds(), docsCount, fKeys, sortKeys)
+		go s.repo.LogSlowQuery(context.Background(), collection, operation, elapsed.Milliseconds(), docsCount, fKeys, sortKeys, operationID)
 	}
 }
 
@@ -289,7 +301,10 @@ func (s *StorageService) archiveForDelete(ctx context.Context, request types.Del
 }
 
 func (s *StorageService) writeArchive(ctx context.Context, collection, suffix string, docs []map[string]interface{}, meta map[string]interface{}) error {
-	operationID := uuid.New().String()
+	operationID := extractOperationID(ctx)
+	if operationID == "" {
+		operationID = uuid.New().String()
+	}
 	archiveTime := time.Now().UnixNano()
 
 	archiveDocs := make([]interface{}, 0, len(docs))
@@ -329,7 +344,7 @@ func (s *StorageService) writeArchive(ctx context.Context, collection, suffix st
 	return nil
 }
 
-func (s *StorageService) upsertQueryStat(_ context.Context, collection, operation string, fKeys []string, sortKeys map[string]int) {
+func (s *StorageService) upsertQueryStat(collection, operation string, fKeys []string, sortKeys map[string]int, operationID string) {
 	if fKeys == nil {
 		fKeys = []string{}
 	}
@@ -337,6 +352,17 @@ func (s *StorageService) upsertQueryStat(_ context.Context, collection, operatio
 	now := time.Now().UnixNano()
 
 	go func() {
+		setData := map[string]interface{}{
+			"collection":         collection,
+			"operation":          operation,
+			"filter_fingerprint": fingerprint,
+			"filter_keys":        fKeys,
+			"sort_keys":          sortKeys,
+			"last_seen":          now,
+		}
+		if operationID != "" {
+			setData["last_operation_id"] = operationID
+		}
 		req := types.UpdateDocumentsRequest{
 			Collection: "_admin_query_stats",
 			Filter: map[string]interface{}{
@@ -345,17 +371,8 @@ func (s *StorageService) upsertQueryStat(_ context.Context, collection, operatio
 				"filter_fingerprint": fingerprint,
 			},
 			Data: map[string]interface{}{
-				"$set": map[string]interface{}{
-					"collection":         collection,
-					"operation":          operation,
-					"filter_fingerprint": fingerprint,
-					"filter_keys":        fKeys,
-					"sort_keys":          sortKeys,
-					"last_seen":          now,
-				},
-				"$inc": map[string]interface{}{
-					"count": 1,
-				},
+				"$set": setData,
+				"$inc": map[string]interface{}{"count": 1},
 			},
 			Upsert: true,
 		}

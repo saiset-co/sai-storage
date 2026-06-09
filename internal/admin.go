@@ -9,12 +9,15 @@ import (
 	"github.com/saiset-co/sai-storage/types"
 )
 
+
 type AdminPanel struct {
 	service *service.StorageService
 	handler *handlers.Handler
 }
 
 func SetupAdmin(storageService *service.StorageService, handler *handlers.Handler) {
+	sai.InstallLogBuffer()
+
 	panel := &AdminPanel{
 		service: storageService,
 		handler: handler,
@@ -42,6 +45,7 @@ func SetupAdmin(storageService *service.StorageService, handler *handlers.Handle
 	adminGroup.GET("/ajax/request-logs", panel.handleAjaxRequestLogs)
 	adminGroup.GET("/ajax/request-log-body", panel.handleAjaxRequestLogBody)
 	adminGroup.GET("/ajax/request-log-info", panel.handleAjaxRequestLogInfo)
+	adminGroup.GET("/ajax/service-logs", panel.handleAjaxServiceLogs)
 	adminGroup.GET("/custom-queries/run", panel.handleRunCustomQuery)
 	adminGroup.POST("/indexes", handler.CreateIndexFromForm)
 	adminGroup.POST("/restore/create", handler.RestoreCreate)
@@ -70,5 +74,6 @@ func SetupAdmin(storageService *service.StorageService, handler *handlers.Handle
 		Page("create-archive", "Создания", panel.pageCreateArchive).
 		Page("update-archive", "Обновления", panel.pageUpdateArchive).
 		Page("delete-archive", "Удаления", panel.pageDeleteArchive).
+		Page("service-logs", "Сервис", panel.pageServiceLogs).
 		Mount()
 }

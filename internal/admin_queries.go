@@ -693,6 +693,16 @@ func slowDocsCell(maxDocs int64) string {
 }
 
 func formatQueryPreview(collection, operation string, keys []string) string {
+	if operation == "aggregate" {
+		if len(keys) == 0 {
+			return fmt.Sprintf("db.%s.aggregate([...])", collection)
+		}
+		parts := make([]string, len(keys))
+		for i, k := range keys {
+			parts[i] = `"` + k + `": ...`
+		}
+		return fmt.Sprintf("db.%s.aggregate([{\"$match\": {%s}}, ...])", collection, strings.Join(parts, ", "))
+	}
 	if len(keys) == 0 {
 		return fmt.Sprintf("db.%s.%s({})", collection, operation)
 	}

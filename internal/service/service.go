@@ -87,7 +87,7 @@ func (s *StorageService) CreateDocuments(ctx context.Context, request types.Crea
 	s.afterOp(ctx, request.Collection, "create", time.Since(t), int64(len(createdIDs)), nil, nil)
 
 	if s.archiveChanges {
-		s.archiveForCreate(ctx, request.Collection, createdIDs)
+		s.archiveForCreate(ctx, request.Collection, request.Data)
 	}
 
 	return types.CreateDocumentsResponse{
@@ -282,24 +282,27 @@ func (s *StorageService) archiveUpsertInsert(ctx context.Context, request types.
 	})
 }
 
-func (s *StorageService) archiveForCreate(ctx context.Context, collection string, createdIDs []string) {
-	if len(createdIDs) == 0 {
+func (s *StorageService) archiveForCreate(ctx context.Context, collection string, data []interface{}) {
+	if len(data) == 0 {
 		return
 	}
-	ids := make([]interface{}, len(createdIDs))
-	for i, id := range createdIDs {
-		ids[i] = id
+	docs := make([]map[string]interface{}, 0, len(data))
+	ids := make([]string, 0, len(data))
+	for _, d := range data {
+		m, ok := d.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		docs = append(docs, m)
+		if id, ok := m["internal_id"].(string); ok && id != "" {
+			ids = append(ids, id)
+		}
 	}
-	docs, _, err := s.repo.ReadDocuments(context.Background(), types.ReadDocumentsRequest{
-		Collection: collection,
-		Filter:     map[string]interface{}{"internal_id": map[string]interface{}{"$in": ids}},
-		Limit:      len(createdIDs),
-	})
-	if err != nil || len(docs) == 0 {
+	if len(docs) == 0 {
 		return
 	}
 	s.writeArchive(ctx, collection, "create_archive", docs, map[string]interface{}{
-		"archive_filter": map[string]interface{}{"internal_id": map[string]interface{}{"$in": createdIDs}},
+		"archive_filter": map[string]interface{}{"internal_id": map[string]interface{}{"$in": ids}},
 	})
 }
 

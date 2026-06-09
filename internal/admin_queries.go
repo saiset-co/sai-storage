@@ -62,14 +62,20 @@ func (p *AdminPanel) pageQueryStats(ctx *saiTypes.RequestCtx) (*admin.PageData, 
 		queryStr := formatQueryPreview(collection, operation, filterKeys)
 		opID, _ := doc["last_operation_id"].(string)
 
-		primaryBtn := fmt.Sprintf(
-			`<button data-collection="%s" data-keys="%s" onclick="_openIdxCreate(this)" `+
-				`style="display:inline-flex;align-items:center;padding:5px 12px;background:#d97706;border:none;cursor:pointer;font-size:12px;font-weight:600;color:white;border-radius:8px 0 0 8px;white-space:nowrap">Создать индексы</button>`,
+		viewBtn := fmt.Sprintf(
+			`<button data-op-id="%s" data-log-col="%s" data-q="%s" onclick="_openQPByOpID(this)" `+
+				`style="display:inline-flex;align-items:center;padding:5px 12px;background:#6366f1;border:none;cursor:pointer;font-size:12px;font-weight:600;color:white;border-radius:8px 0 0 8px;white-space:nowrap">Просмотр</button>`,
+			template.HTMLEscapeString(opID),
+			template.HTMLEscapeString(collection+"_request_logs"),
+			template.HTMLEscapeString(queryStr),
+		)
+		idxBtn := fmt.Sprintf(
+			`<button type="button" data-collection="%s" data-keys="%s" onclick="_openIdxCreate(this)" `+
+				`style="display:block;width:100%%;text-align:left;padding:6px 10px;border-radius:6px;font-size:12px;font-weight:500;color:#334155;background:none;border:none;cursor:pointer;white-space:nowrap" `+
+				`onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background=''">Создать индексы</button>`,
 			template.HTMLEscapeString(collection), template.HTMLEscapeString(string(keysJSON)),
 		)
-		dropdownItems := []string{
-			queryViewBtn(queryStr, opID, collection+"_request_logs"),
-		}
+		dropdownItems := []string{idxBtn}
 
 		sb.WriteString(`<tr class="hover:bg-slate-50">`)
 		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3 font-mono">%s</td>`, template.HTMLEscapeString(collection)))
@@ -77,7 +83,7 @@ func (p *AdminPanel) pageQueryStats(ctx *saiTypes.RequestCtx) (*admin.PageData, 
 		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3 font-semibold">%d</td>`, count))
 		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3 text-xs text-slate-500">%s</td>`, lastSeen))
 		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3 text-center">%d</td>`, len(filterKeys)))
-		sb.WriteString(`<td class="px-4 py-3">` + sdWrap(primaryBtn, "#d97706", dropdownItems) + `</td>`)
+		sb.WriteString(`<td class="px-4 py-3">` + sdWrap(viewBtn, "#6366f1", dropdownItems) + `</td>`)
 		sb.WriteString(`</tr>`)
 	}
 	sb.WriteString(`</tbody></table></div>`)
@@ -178,14 +184,20 @@ func (p *AdminPanel) pageSlowQueries(ctx *saiTypes.RequestCtx) (*admin.PageData,
 		queryStr := formatQueryPreview(collection, operation, fKeys)
 		opID, _ := doc["operation_id"].(string)
 
-		primaryBtn := fmt.Sprintf(
-			`<button data-collection="%s" data-keys="%s" onclick="_openIdxCreate(this)" `+
-				`style="display:inline-flex;align-items:center;padding:5px 12px;background:#d97706;border:none;cursor:pointer;font-size:12px;font-weight:600;color:white;border-radius:8px 0 0 8px;white-space:nowrap">Создать индексы</button>`,
+		viewBtn := fmt.Sprintf(
+			`<button data-op-id="%s" data-log-col="%s" data-q="%s" onclick="_openQPByOpID(this)" `+
+				`style="display:inline-flex;align-items:center;padding:5px 12px;background:#6366f1;border:none;cursor:pointer;font-size:12px;font-weight:600;color:white;border-radius:8px 0 0 8px;white-space:nowrap">Просмотр</button>`,
+			template.HTMLEscapeString(opID),
+			template.HTMLEscapeString(collection+"_request_logs"),
+			template.HTMLEscapeString(queryStr),
+		)
+		idxBtn := fmt.Sprintf(
+			`<button type="button" data-collection="%s" data-keys="%s" onclick="_openIdxCreate(this)" `+
+				`style="display:block;width:100%%;text-align:left;padding:6px 10px;border-radius:6px;font-size:12px;font-weight:500;color:#334155;background:none;border:none;cursor:pointer;white-space:nowrap" `+
+				`onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background=''">Создать индексы</button>`,
 			template.HTMLEscapeString(collection), template.HTMLEscapeString(string(keysJSON)),
 		)
-		dropdownItems := []string{
-			queryViewBtn(queryStr, opID, collection+"_request_logs"),
-		}
+		dropdownItems := []string{idxBtn}
 
 		docsCell := slowDocsCell(maxDocs)
 
@@ -197,7 +209,7 @@ func (p *AdminPanel) pageSlowQueries(ctx *saiTypes.RequestCtx) (*admin.PageData,
 		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3 text-center">%d</td>`, len(fKeys)))
 		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3 font-semibold text-rose-600">%d мс</td>`, durationMs))
 		sb.WriteString(`<td class="px-4 py-3">` + docsCell + `</td>`)
-		sb.WriteString(`<td class="px-4 py-3">` + sdWrap(primaryBtn, "#d97706", dropdownItems) + `</td>`)
+		sb.WriteString(`<td class="px-4 py-3">` + sdWrap(viewBtn, "#6366f1", dropdownItems) + `</td>`)
 		sb.WriteString(`</tr>`)
 	}
 	sb.WriteString(`</tbody></table></div>`)
@@ -257,8 +269,14 @@ func (p *AdminPanel) pageCustomQueries(ctx *saiTypes.RequestCtx) (*admin.PageDat
 		searchVal := template.HTMLEscapeString(name + " " + collection + " " + queryFull + " " + description)
 
 		primaryBtn := fmt.Sprintf(
-			`<button data-query="%s" onclick="_runCQ(this)" `+
-				`style="display:inline-flex;align-items:center;padding:5px 12px;background:#6366f1;border:none;cursor:pointer;font-size:12px;font-weight:600;color:white;border-radius:8px 0 0 8px;white-space:nowrap">Запустить</button>`,
+			`<button data-q="%s" onclick="_openQP(this)" `+
+				`style="display:inline-flex;align-items:center;padding:5px 12px;background:#6366f1;border:none;cursor:pointer;font-size:12px;font-weight:600;color:white;border-radius:8px 0 0 8px;white-space:nowrap">Детали</button>`,
+			template.HTMLEscapeString(queryFull),
+		)
+		runBtn := fmt.Sprintf(
+			`<button type="button" data-query="%s" onclick="_runCQ(this)" `+
+				`style="display:block;width:100%%;text-align:left;padding:6px 10px;border-radius:6px;font-size:12px;font-weight:500;color:#334155;background:none;border:none;cursor:pointer;white-space:nowrap" `+
+				`onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background=''">Запустить</button>`,
 			template.HTMLEscapeString(queryFull),
 		)
 		editBtn := fmt.Sprintf(
@@ -274,11 +292,7 @@ func (p *AdminPanel) pageCustomQueries(ctx *saiTypes.RequestCtx) (*admin.PageDat
 				`onmouseover="this.style.background='#fef2f2'" onmouseout="this.style.background=''">Удалить</button>`,
 			template.HTMLEscapeString(id),
 		)
-		dropdownItems := []string{
-			sdBtnData("Детали", "data-q", queryFull, "_openQP(this)"),
-			editBtn,
-			deleteBtn,
-		}
+		dropdownItems := []string{runBtn, editBtn, deleteBtn}
 
 		sb.WriteString(fmt.Sprintf(`<tr class="hover:bg-slate-50" data-search="%s">`, searchVal))
 		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3 font-medium">%s</td>`, template.HTMLEscapeString(name)))
@@ -359,8 +373,15 @@ func (p *AdminPanel) handleAjaxRequestLogInfo(ctx *saiTypes.RequestCtx) {
 	}
 	sb.WriteString(`</div>`)
 	if body, ok := rl["body"].(string); ok && body != "" {
+		prettyBody := body
+		var raw interface{}
+		if json.Unmarshal([]byte(body), &raw) == nil {
+			if b, err := json.MarshalIndent(raw, "", "  "); err == nil {
+				prettyBody = string(b)
+			}
+		}
 		sb.WriteString(`<div style="color:#64748b;margin-bottom:3px;font-size:11px">Тело запроса:</div>`)
-		sb.WriteString(`<pre style="font-size:11px;background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:10px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;max-height:200px;margin:0">` + template.HTMLEscapeString(body) + `</pre>`)
+		sb.WriteString(`<pre style="font-size:11px;background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:10px;overflow-x:auto;white-space:pre-wrap;word-break:break-word;max-height:300px;margin:0">` + template.HTMLEscapeString(prettyBody) + `</pre>`)
 	}
 	sb.WriteString(`</div>`)
 	ctx.Response.SetBodyString(sb.String())
@@ -854,22 +875,21 @@ func queryPreviewScript() string {
 	return `<script>if(!window._qpInit){window._qpInit=true;` +
 		`window._openQP=function(btn){` +
 		`document.getElementById('qpLogInfo').style.display='none';` +
-		`document.getElementById('qpContent').textContent=btn.getAttribute('data-q');` +
+		`var c=document.getElementById('qpContent');c.style.display='block';c.textContent=btn.getAttribute('data-q');` +
 		`document.getElementById('qpModal').style.display='flex';};` +
 		`window._openQPByOpID=function(btn){` +
 		`var opID=btn.getAttribute('data-op-id');` +
 		`var logCol=btn.getAttribute('data-log-col');` +
-		`var fallback=btn.getAttribute('data-q');` +
 		`var infoDiv=document.getElementById('qpLogInfo');` +
 		`infoDiv.innerHTML='';infoDiv.style.display='none';` +
-		`document.getElementById('qpContent').textContent=fallback;` +
+		`var c=document.getElementById('qpContent');c.style.display='none';c.textContent='';` +
 		`document.getElementById('qpModal').style.display='flex';` +
 		`if(opID&&logCol){` +
 		`fetch(window.location.origin+'/admin/ajax/request-log-info?op_id='+encodeURIComponent(opID)+'&log_collection='+encodeURIComponent(logCol),` +
 		`{headers:{'X-Requested-With':'fetch'}})` +
 		`.then(function(r){return r.text();})` +
-		`.then(function(h){if(h){infoDiv.innerHTML=h;infoDiv.style.display='block';}})` +
-		`.catch(function(){});}};` +
+		`.then(function(h){if(h){infoDiv.innerHTML=h;infoDiv.style.display='block';}else{c.style.display='block';}})` +
+		`.catch(function(){c.style.display='block';});}};` +
 		`}</script>`
 }
 

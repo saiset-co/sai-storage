@@ -107,23 +107,23 @@ func (p *AdminPanel) buildAjaxArchiveContent(ctx *saiTypes.RequestCtx, suffix, r
 		}
 
 		primaryBtn := fmt.Sprintf(
-			`<button data-col="%s" data-opid="%s" data-srccol="%s" data-action="%s" data-count="%d" data-restored="%d" onclick="_openArchiveDocsBtn(this)" `+
-				`style="display:inline-flex;align-items:center;padding:5px 12px;background:#6366f1;border:none;cursor:pointer;font-size:12px;font-weight:600;color:white;border-radius:8px 0 0 8px;white-space:nowrap">Документы</button>`,
+			`<button data-q="%s" data-op-id="%s" data-log-col="%s" onclick="_openArchiveDetails(this)" `+
+				`style="display:inline-flex;align-items:center;padding:5px 12px;background:#6366f1;border:none;cursor:pointer;font-size:12px;font-weight:600;color:white;border-radius:8px 0 0 8px;white-space:nowrap">Детали</button>`,
+			template.HTMLEscapeString(queryFull),
+			template.HTMLEscapeString(g.OperationID),
+			template.HTMLEscapeString(logCollection),
+		)
+		docsBtn := fmt.Sprintf(
+			`<button type="button" data-col="%s" data-opid="%s" data-srccol="%s" data-action="%s" data-count="%d" data-restored="%d" onclick="_openArchiveDocsBtn(this)" `+
+				`style="display:block;width:100%%;text-align:left;padding:6px 10px;border-radius:6px;font-size:12px;font-weight:500;color:#334155;background:none;border:none;cursor:pointer;white-space:nowrap" `+
+				`onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background=''">Документы</button>`,
 			template.HTMLEscapeString(collection),
 			template.HTMLEscapeString(g.OperationID),
 			template.HTMLEscapeString(sourceCollection),
 			template.HTMLEscapeString(restoreAction),
 			g.Count, g.RestoredAt,
 		)
-		detailsBtn := fmt.Sprintf(
-			`<button type="button" data-q="%s" data-op-id="%s" data-log-col="%s" onclick="_openArchiveDetails(this)" `+
-				`style="display:block;width:100%%;text-align:left;padding:6px 10px;border-radius:6px;font-size:12px;font-weight:500;color:#334155;background:none;border:none;cursor:pointer;white-space:nowrap" `+
-				`onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background=''">Детали</button>`,
-			template.HTMLEscapeString(queryFull),
-			template.HTMLEscapeString(g.OperationID),
-			template.HTMLEscapeString(logCollection),
-		)
-		dropdownItems := []string{detailsBtn}
+		dropdownItems := []string{docsBtn}
 
 		sb.WriteString(fmt.Sprintf(`<tr class="hover:bg-slate-50"%s>`, rowStyle))
 		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">%s</td>`, formatNanoTwoLine(g.ArchiveTime)))
@@ -209,8 +209,15 @@ func (p *AdminPanel) handleArchiveDocs(ctx *saiTypes.RequestCtx) {
 			}
 			sb.WriteString(`</div>`)
 			if body, ok := rl["body"].(string); ok && body != "" {
+				prettyBody := body
+				var raw interface{}
+				if json.Unmarshal([]byte(body), &raw) == nil {
+					if b, err := json.MarshalIndent(raw, "", "  "); err == nil {
+						prettyBody = string(b)
+					}
+				}
 				sb.WriteString(`<div style="color:#64748b;margin-bottom:3px">Тело запроса:</div>`)
-				sb.WriteString(`<pre style="font-size:11px;background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:10px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;max-height:150px;margin:0">` + template.HTMLEscapeString(body) + `</pre>`)
+				sb.WriteString(`<pre style="font-size:11px;background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:10px;overflow-x:auto;white-space:pre-wrap;word-break:break-word;max-height:200px;margin:0">` + template.HTMLEscapeString(prettyBody) + `</pre>`)
 			}
 			sb.WriteString(`</div>`)
 		}
@@ -303,7 +310,8 @@ func archiveDocsScript() string {
 		`var q=btn.getAttribute('data-q');` +
 		`var opID=btn.getAttribute('data-op-id');` +
 		`var logCol=btn.getAttribute('data-log-col');` +
-		`document.getElementById('archiveQueryContent').textContent=q||'';` +
+		`var c=document.getElementById('archiveQueryContent');` +
+		`c.style.display='none';c.textContent=q||'';` +
 		`var infoDiv=document.getElementById('archiveQueryLogInfo');` +
 		`infoDiv.innerHTML='';infoDiv.style.display='none';` +
 		`document.getElementById('archiveQueryModal').style.display='flex';` +
@@ -311,8 +319,8 @@ func archiveDocsScript() string {
 		`fetch(window.location.origin+'/admin/ajax/request-log-info?op_id='+encodeURIComponent(opID)+'&log_collection='+encodeURIComponent(logCol),` +
 		`{headers:{'X-Requested-With':'fetch'}})` +
 		`.then(function(r){return r.text();})` +
-		`.then(function(h){if(h){infoDiv.innerHTML=h;infoDiv.style.display='block';}})` +
-		`.catch(function(){});}};` +
+		`.then(function(h){if(h){infoDiv.innerHTML=h;infoDiv.style.display='block';}else{c.style.display='block';}})` +
+		`.catch(function(){c.style.display='block';});}};` +
 		`window._openArchiveDocsBtn=function(btn){` +
 		`_openArchiveDocs(` +
 		`btn.getAttribute('data-col'),` +

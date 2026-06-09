@@ -19,6 +19,7 @@ import (
 var serviceCollectionSuffixes = []string{
 	"_update_archive",
 	"_delete_archive",
+	"_create_archive",
 	"_request_logs",
 }
 

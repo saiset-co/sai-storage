@@ -14,6 +14,10 @@ import (
 	"github.com/saiset-co/sai-storage/types"
 )
 
+func (p *AdminPanel) pageCreateArchive(_ *saiTypes.RequestCtx) (*admin.PageData, error) {
+	return p.buildArchivePage("create_archive", "Логи созданий", "crtArcPanel")
+}
+
 func (p *AdminPanel) pageUpdateArchive(_ *saiTypes.RequestCtx) (*admin.PageData, error) {
 	return p.buildArchivePage("update_archive", "Логи обновлений", "updArcPanel")
 }
@@ -46,6 +50,10 @@ func (p *AdminPanel) buildArchivePage(suffix, title, panelID string) (*admin.Pag
 			{Title: title, ContentHTML: template.HTML(twoColPage(items, panelID, scripts))},
 		},
 	}, nil
+}
+
+func (p *AdminPanel) handleAjaxCreateArchive(ctx *saiTypes.RequestCtx) {
+	p.buildAjaxArchiveContent(ctx, "create_archive", "/admin/restore/create", "/admin/ajax/create-archive", "crtArcPanel")
 }
 
 func (p *AdminPanel) handleAjaxUpdateArchive(ctx *saiTypes.RequestCtx) {
@@ -91,6 +99,7 @@ func (p *AdminPanel) buildAjaxArchiveContent(ctx *saiTypes.RequestCtx, suffix, r
 
 	for _, g := range groups {
 		queryFull := formatArchiveShellQuery(sourceCollection, "", g.Filter, g.Update)
+		logCollection := sourceCollection + "_request_logs"
 
 		rowStyle := ""
 		if g.RestoredAt > 0 {
@@ -106,9 +115,15 @@ func (p *AdminPanel) buildAjaxArchiveContent(ctx *saiTypes.RequestCtx, suffix, r
 			template.HTMLEscapeString(restoreAction),
 			g.Count, g.RestoredAt,
 		)
-		dropdownItems := []string{
-			sdBtnData("Детали", "data-q", queryFull, "_openArchiveQuery(this)"),
-		}
+		detailsBtn := fmt.Sprintf(
+			`<button type="button" data-q="%s" data-op-id="%s" data-log-col="%s" onclick="_openArchiveDetails(this)" `+
+				`style="display:block;width:100%%;text-align:left;padding:6px 10px;border-radius:6px;font-size:12px;font-weight:500;color:#334155;background:none;border:none;cursor:pointer;white-space:nowrap" `+
+				`onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background=''">Детали</button>`,
+			template.HTMLEscapeString(queryFull),
+			template.HTMLEscapeString(g.OperationID),
+			template.HTMLEscapeString(logCollection),
+		)
+		dropdownItems := []string{detailsBtn}
 
 		sb.WriteString(fmt.Sprintf(`<tr class="hover:bg-slate-50"%s>`, rowStyle))
 		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">%s</td>`, formatNanoTwoLine(g.ArchiveTime)))
@@ -167,7 +182,7 @@ func (p *AdminPanel) handleArchiveDocs(ctx *saiTypes.RequestCtx) {
 		sourceCollection = sc
 	}
 	if sourceCollection == "" {
-		for _, sfx := range []string{"_update_archive", "_delete_archive"} {
+		for _, sfx := range []string{"_update_archive", "_delete_archive", "_create_archive"} {
 			if strings.HasSuffix(archiveCollection, sfx) {
 				sourceCollection = strings.TrimSuffix(archiveCollection, sfx)
 				break
@@ -254,11 +269,12 @@ func archiveQueryModal() string {
 	return `<div id="archiveQueryModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.5);z-index:50;align-items:center;justify-content:center;padding:16px">` +
 		`<div style="background:white;border-radius:16px;width:100%;max-width:800px;max-height:90vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 25px 50px rgba(0,0,0,0.3)">` +
 		`<div style="display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid #e2e8f0;flex:0 0 auto">` +
-		`<h2 style="font-size:18px;font-weight:700;color:#0f172a">Запрос</h2>` +
+		`<h2 style="font-size:18px;font-weight:700;color:#0f172a">Детали операции</h2>` +
 		`<button onclick="document.getElementById('archiveQueryModal').style.display='none'" ` +
 		`style="width:32px;height:32px;border-radius:8px;background:#f1f5f9;border:none;cursor:pointer;font-size:18px;color:#64748b">×</button>` +
 		`</div>` +
 		`<div style="flex:1 1 auto;overflow-y:auto;padding:24px">` +
+		`<div id="archiveQueryLogInfo" style="display:none"></div>` +
 		`<pre id="archiveQueryContent" style="font-size:13px;color:#1e293b;background:#f8fafc;border-radius:8px;padding:16px;overflow-x:auto;white-space:pre-wrap;word-break:break-all"></pre>` +
 		`</div></div></div>`
 }
@@ -283,9 +299,20 @@ func archiveDocsModal(restoreAction string) string {
 
 func archiveDocsScript() string {
 	return `<script>if(!window._archiveInit){window._archiveInit=true;` +
-		`window._openArchiveQuery=function(btn){` +
-		`document.getElementById('archiveQueryContent').textContent=btn.getAttribute('data-q');` +
-		`document.getElementById('archiveQueryModal').style.display='flex';};` +
+		`window._openArchiveDetails=function(btn){` +
+		`var q=btn.getAttribute('data-q');` +
+		`var opID=btn.getAttribute('data-op-id');` +
+		`var logCol=btn.getAttribute('data-log-col');` +
+		`document.getElementById('archiveQueryContent').textContent=q||'';` +
+		`var infoDiv=document.getElementById('archiveQueryLogInfo');` +
+		`infoDiv.innerHTML='';infoDiv.style.display='none';` +
+		`document.getElementById('archiveQueryModal').style.display='flex';` +
+		`if(opID&&logCol){` +
+		`fetch(window.location.origin+'/admin/ajax/request-log-info?op_id='+encodeURIComponent(opID)+'&log_collection='+encodeURIComponent(logCol),` +
+		`{headers:{'X-Requested-With':'fetch'}})` +
+		`.then(function(r){return r.text();})` +
+		`.then(function(h){if(h){infoDiv.innerHTML=h;infoDiv.style.display='block';}})` +
+		`.catch(function(){});}};` +
 		`window._openArchiveDocsBtn=function(btn){` +
 		`_openArchiveDocs(` +
 		`btn.getAttribute('data-col'),` +

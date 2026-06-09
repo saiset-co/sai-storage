@@ -330,6 +330,42 @@ func queryViewBtn(queryStr, opID, logCollection string) string {
 	)
 }
 
+func (p *AdminPanel) handleAjaxRequestLogInfo(ctx *saiTypes.RequestCtx) {
+	opID := string(ctx.QueryArgs().Peek("op_id"))
+	logCollection := string(ctx.QueryArgs().Peek("log_collection"))
+	ctx.SetContentType("text/html; charset=utf-8")
+	if opID == "" || logCollection == "" {
+		return
+	}
+	docs, _, err := p.service.GetRepo().ReadDocuments(context.Background(), types.ReadDocumentsRequest{
+		Collection: logCollection,
+		Filter:     map[string]interface{}{"operation_id": opID},
+		Limit:      1,
+	})
+	if err != nil || len(docs) == 0 {
+		return
+	}
+	rl := docs[0]
+	var sb strings.Builder
+	sb.WriteString(`<div style="background:#f8fafc;border-radius:10px;padding:12px 16px;margin-bottom:14px;border:1px solid #e2e8f0;font-size:12px">`)
+	sb.WriteString(`<div style="display:flex;flex-wrap:wrap;gap:4px 20px;margin-bottom:8px">`)
+	if ts, ok := rl["request_unix"].(float64); ok && ts > 0 {
+		sb.WriteString(archiveRLCell("Дата", time.Unix(int64(ts), 0).Format("02.01.2006 15:04:05")))
+	}
+	for _, pair := range [][2]string{{"Метод", "method"}, {"Путь", "path"}, {"IP", "ip"}, {"User", "user"}, {"User ID", "user_id"}} {
+		if v, ok := rl[pair[1]].(string); ok && v != "" {
+			sb.WriteString(archiveRLCell(pair[0], v))
+		}
+	}
+	sb.WriteString(`</div>`)
+	if body, ok := rl["body"].(string); ok && body != "" {
+		sb.WriteString(`<div style="color:#64748b;margin-bottom:3px;font-size:11px">Тело запроса:</div>`)
+		sb.WriteString(`<pre style="font-size:11px;background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:10px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;max-height:200px;margin:0">` + template.HTMLEscapeString(body) + `</pre>`)
+	}
+	sb.WriteString(`</div>`)
+	ctx.Response.SetBodyString(sb.String())
+}
+
 func (p *AdminPanel) handleAjaxRequestLogBody(ctx *saiTypes.RequestCtx) {
 	opID := string(ctx.QueryArgs().Peek("op_id"))
 	logCollection := string(ctx.QueryArgs().Peek("log_collection"))
@@ -809,6 +845,7 @@ func queryPreviewModal() string {
 		`style="width:32px;height:32px;border-radius:8px;background:#f1f5f9;border:none;cursor:pointer;font-size:18px;color:#64748b">×</button>` +
 		`</div>` +
 		`<div style="flex:1 1 auto;overflow-y:auto;padding:24px">` +
+		`<div id="qpLogInfo" style="display:none"></div>` +
 		`<pre id="qpContent" style="font-size:13px;color:#1e293b;background:#f8fafc;border-radius:8px;padding:16px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;margin:0"></pre>` +
 		`</div></div></div>`
 }
@@ -816,19 +853,22 @@ func queryPreviewModal() string {
 func queryPreviewScript() string {
 	return `<script>if(!window._qpInit){window._qpInit=true;` +
 		`window._openQP=function(btn){` +
+		`document.getElementById('qpLogInfo').style.display='none';` +
 		`document.getElementById('qpContent').textContent=btn.getAttribute('data-q');` +
 		`document.getElementById('qpModal').style.display='flex';};` +
 		`window._openQPByOpID=function(btn){` +
 		`var opID=btn.getAttribute('data-op-id');` +
 		`var logCol=btn.getAttribute('data-log-col');` +
 		`var fallback=btn.getAttribute('data-q');` +
+		`var infoDiv=document.getElementById('qpLogInfo');` +
+		`infoDiv.innerHTML='';infoDiv.style.display='none';` +
 		`document.getElementById('qpContent').textContent=fallback;` +
 		`document.getElementById('qpModal').style.display='flex';` +
 		`if(opID&&logCol){` +
-		`fetch(window.location.origin+'/admin/ajax/request-log-body?op_id='+encodeURIComponent(opID)+'&log_collection='+encodeURIComponent(logCol),` +
+		`fetch(window.location.origin+'/admin/ajax/request-log-info?op_id='+encodeURIComponent(opID)+'&log_collection='+encodeURIComponent(logCol),` +
 		`{headers:{'X-Requested-With':'fetch'}})` +
 		`.then(function(r){return r.text();})` +
-		`.then(function(t){if(t)document.getElementById('qpContent').textContent=t;})` +
+		`.then(function(h){if(h){infoDiv.innerHTML=h;infoDiv.style.display='block';}})` +
 		`.catch(function(){});}};` +
 		`}</script>`
 }

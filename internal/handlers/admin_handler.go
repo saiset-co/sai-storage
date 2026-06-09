@@ -152,6 +152,59 @@ func (h *Handler) RestoreDelete(ctx *saiTypes.RequestCtx) {
 	admin.WriteActionJSON(ctx, fmt.Sprintf("Восстановлено документов: %d", restored), nil)
 }
 
+func (h *Handler) RestoreCreate(ctx *saiTypes.RequestCtx) {
+	collection := strings.TrimSpace(string(ctx.FormValue("collection")))
+	opID := strings.TrimSpace(string(ctx.FormValue("archive_operation_id")))
+	if collection == "" || opID == "" {
+		admin.WriteActionJSON(ctx, "", fmt.Errorf("collection и archive_operation_id обязательны"))
+		return
+	}
+
+	archiveCollection := fmt.Sprintf("%s_create_archive", collection)
+
+	check, _, _ := h.service.GetRepo().ReadDocuments(context.Background(), types.ReadDocumentsRequest{
+		Collection: archiveCollection,
+		Filter:     map[string]interface{}{"archive_operation_id": opID, "restored_at": map[string]interface{}{"$gt": 0}},
+		Limit:      1,
+	})
+	if len(check) > 0 {
+		admin.WriteActionJSON(ctx, "", fmt.Errorf("операция уже была отменена"))
+		return
+	}
+
+	docs, _, err := h.service.GetRepo().ReadDocuments(context.Background(), types.ReadDocumentsRequest{
+		Collection: archiveCollection,
+		Filter:     map[string]interface{}{"archive_operation_id": opID},
+	})
+	if err != nil {
+		admin.WriteActionJSON(ctx, "", err)
+		return
+	}
+
+	deleted := 0
+	for _, doc := range docs {
+		internalID, ok := doc["internal_id"]
+		if !ok {
+			continue
+		}
+		n, err := h.service.GetRepo().DeleteDocuments(context.Background(), types.DeleteDocumentsRequest{
+			Collection: collection,
+			Filter:     map[string]interface{}{"internal_id": internalID},
+		})
+		if err == nil && n > 0 {
+			deleted++
+		}
+	}
+
+	h.service.GetRepo().UpdateDocuments(context.Background(), types.UpdateDocumentsRequest{
+		Collection: archiveCollection,
+		Filter:     map[string]interface{}{"archive_operation_id": opID},
+		Data:       map[string]interface{}{"$set": map[string]interface{}{"restored_at": time.Now().UnixNano()}},
+	})
+
+	admin.WriteActionJSON(ctx, fmt.Sprintf("Удалено документов: %d", deleted), nil)
+}
+
 func (h *Handler) SetSlowQueryThreshold(ctx *saiTypes.RequestCtx) {
 	rawMs := strings.TrimSpace(string(ctx.FormValue("slow_ms")))
 	ms := 0

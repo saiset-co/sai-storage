@@ -36,12 +36,15 @@ func SetupAdmin(storageService *service.StorageService, handler *handlers.Handle
 	adminGroup.GET("/archive/docs", panel.handleArchiveDocs)
 	adminGroup.GET("/ajax/collection-browse", panel.handleAjaxCollectionBrowse)
 	adminGroup.GET("/ajax/indexes", panel.handleAjaxIndexes)
+	adminGroup.GET("/ajax/create-archive", panel.handleAjaxCreateArchive)
 	adminGroup.GET("/ajax/update-archive", panel.handleAjaxUpdateArchive)
 	adminGroup.GET("/ajax/delete-archive", panel.handleAjaxDeleteArchive)
 	adminGroup.GET("/ajax/request-logs", panel.handleAjaxRequestLogs)
 	adminGroup.GET("/ajax/request-log-body", panel.handleAjaxRequestLogBody)
+	adminGroup.GET("/ajax/request-log-info", panel.handleAjaxRequestLogInfo)
 	adminGroup.GET("/custom-queries/run", panel.handleRunCustomQuery)
 	adminGroup.POST("/indexes", handler.CreateIndexFromForm)
+	adminGroup.POST("/restore/create", handler.RestoreCreate)
 	adminGroup.POST("/restore/update", handler.RestoreUpdate)
 	adminGroup.POST("/restore/delete", handler.RestoreDelete)
 	adminGroup.POST("/slow-queries/threshold", handler.SetSlowQueryThreshold)
@@ -64,6 +67,7 @@ func SetupAdmin(storageService *service.StorageService, handler *handlers.Handle
 		Page("query-stats", "Частые", panel.pageQueryStats).
 		Group("Логи").
 		Page("request-logs", "Запросы", panel.pageRequestLogs).
+		Page("create-archive", "Создания", panel.pageCreateArchive).
 		Page("update-archive", "Обновления", panel.pageUpdateArchive).
 		Page("delete-archive", "Удаления", panel.pageDeleteArchive).
 		Mount()

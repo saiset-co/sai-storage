@@ -173,7 +173,6 @@ func (h *Handler) DeleteDocuments(ctx *saiTypes.RequestCtx) {
 func (h *Handler) logRequest(ctx *saiTypes.RequestCtx, collection string, body interface{}) {
 	now := time.Now()
 	requestInfo := map[string]interface{}{
-		"collection":   collection,
 		"method":       string(ctx.Method()),
 		"path":         string(ctx.Path()),
 		"request_time": now.Format(time.RFC3339),

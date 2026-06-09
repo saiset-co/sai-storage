@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"strings"
@@ -28,7 +29,7 @@ func (p *AdminPanel) pageRequestLogs(_ *saiTypes.RequestCtx) (*admin.PageData, e
 		}
 	}
 
-	scripts := twoColScript() + requestLogDetailScript() + requestLogFilterScript() + archiveDocsScript() + archiveFromLogScript()
+	scripts := twoColScript() + requestLogFilterScript() + archiveDocsScript() + archiveFromLogScript()
 
 	return &admin.PageData{
 		Sections: []admin.Section{
@@ -111,7 +112,7 @@ func (p *AdminPanel) handleAjaxRequestLogs(ctx *saiTypes.RequestCtx) {
 		return
 	}
 
-	sb.WriteString(requestLogDetailModal())
+	sb.WriteString(archiveQueryModal())
 	sb.WriteString(archiveDocsModal(""))
 
 	sb.WriteString(`<div class="overflow-x-auto"><table class="min-w-full divide-y divide-slate-200 text-sm">`)
@@ -134,25 +135,45 @@ func (p *AdminPanel) handleAjaxRequestLogs(ctx *saiTypes.RequestCtx) {
 		userID, _ := doc["user_id"].(string)
 		opID, _ := doc["operation_id"].(string)
 		srcCollection, _ := doc["collection"].(string)
+		if srcCollection == "" {
+			if bodyStr, ok := doc["body"].(string); ok && bodyStr != "" {
+				var m map[string]interface{}
+				if json.Unmarshal([]byte(bodyStr), &m) == nil {
+					srcCollection, _ = m["collection"].(string)
+				}
+			}
+		}
 
 		docJSON, _ := ctx.Marshal(doc)
 
-		var archiveBtn string
-		if opID != "" && srcCollection != "" && (method == "PUT" || method == "DELETE") {
-			archiveSuffix := "_update_archive"
-			restoreAction := "/admin/restore/update"
-			if method == "DELETE" {
+		primaryBtn := fmt.Sprintf(
+			`<button data-q="%s" data-op-id="%s" data-log-col="%s" onclick="_openArchiveDetails(this)" `+
+				`style="display:inline-flex;align-items:center;padding:5px 12px;background:#6366f1;border:none;cursor:pointer;font-size:12px;font-weight:600;color:white;border-radius:8px;white-space:nowrap">Детали</button>`,
+			template.HTMLEscapeString(string(docJSON)),
+			template.HTMLEscapeString(opID),
+			template.HTMLEscapeString(collection),
+		)
+
+		var dropdownItems []string
+		if opID != "" && srcCollection != "" && (method == "POST" || method == "PUT" || method == "DELETE") {
+			archiveSuffix := "_create_archive"
+			restoreAction := "/admin/restore/create"
+			if method == "PUT" {
+				archiveSuffix = "_update_archive"
+				restoreAction = "/admin/restore/update"
+			} else if method == "DELETE" {
 				archiveSuffix = "_delete_archive"
 				restoreAction = "/admin/restore/delete"
 			}
-			archiveBtn = fmt.Sprintf(
-				` <button data-arc-col="%s" data-op-id="%s" data-src-col="%s" data-action="%s" onclick="_openArchiveFromLog(this)" `+
-					`class="inline-flex items-center rounded px-2 py-1 text-xs font-medium bg-indigo-100 text-indigo-700 hover:bg-indigo-200">Архив</button>`,
+			dropdownItems = append(dropdownItems, fmt.Sprintf(
+				`<button type="button" data-arc-col="%s" data-op-id="%s" data-src-col="%s" data-action="%s" onclick="_openArchiveFromLog(this)" `+
+					`style="display:block;width:100%%;text-align:left;padding:6px 10px;border-radius:6px;font-size:12px;font-weight:500;color:#334155;background:none;border:none;cursor:pointer;white-space:nowrap" `+
+					`onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background=''">Архив</button>`,
 				template.HTMLEscapeString(srcCollection+archiveSuffix),
 				template.HTMLEscapeString(opID),
 				template.HTMLEscapeString(srcCollection),
 				template.HTMLEscapeString(restoreAction),
-			)
+			))
 		}
 
 		sb.WriteString(`<tr class="hover:bg-slate-50">`)
@@ -161,11 +182,7 @@ func (p *AdminPanel) handleAjaxRequestLogs(ctx *saiTypes.RequestCtx) {
 		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3 font-mono text-xs">%s</td>`, template.HTMLEscapeString(path)))
 		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3 text-xs font-mono text-slate-400">%s</td>`, template.HTMLEscapeString(ip)))
 		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3 text-xs font-mono text-slate-400">%s</td>`, template.HTMLEscapeString(userID)))
-		sb.WriteString(fmt.Sprintf(
-			`<td class="px-4 py-3"><button data-doc="%s" onclick="_showLogDetail(this)" `+
-				`class="inline-flex items-center rounded px-2 py-1 text-xs font-medium bg-slate-100 text-slate-600 hover:bg-slate-200">Детали</button>%s</td>`,
-			template.HTMLEscapeString(string(docJSON)), archiveBtn,
-		))
+		sb.WriteString(`<td class="px-4 py-3">` + sdWrap(primaryBtn, "#6366f1", dropdownItems) + `</td>`)
 		sb.WriteString(`</tr>`)
 	}
 	sb.WriteString(`</tbody></table></div>`)
@@ -197,27 +214,6 @@ func methodBadge(method string) string {
 		cls, template.HTMLEscapeString(method))
 }
 
-func requestLogDetailModal() string {
-	return `<div id="rlDetailModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.5);z-index:50;align-items:center;justify-content:center;padding:16px">` +
-		`<div style="background:white;border-radius:16px;width:100%;max-width:760px;max-height:90vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 25px 50px rgba(0,0,0,0.3)">` +
-		`<div style="display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid #e2e8f0;flex:0 0 auto">` +
-		`<h2 style="font-size:18px;font-weight:700;color:#0f172a">Детали запроса</h2>` +
-		`<button onclick="document.getElementById('rlDetailModal').style.display='none'" ` +
-		`style="width:32px;height:32px;border-radius:8px;background:#f1f5f9;border:none;cursor:pointer;font-size:18px;color:#64748b">×</button>` +
-		`</div>` +
-		`<div style="flex:1 1 auto;overflow-y:auto;padding:24px">` +
-		`<pre id="rlDetailContent" style="font-size:12px;color:#1e293b;background:#f8fafc;border-radius:8px;padding:16px;overflow-x:auto;white-space:pre-wrap;word-break:break-all"></pre>` +
-		`</div></div></div>`
-}
-
-func requestLogDetailScript() string {
-	return `<script>if(!window._rlInit){window._rlInit=true;` +
-		`window._showLogDetail=function(btn){` +
-		`var s=btn.getAttribute('data-doc');` +
-		`try{s=JSON.stringify(JSON.parse(s),null,2);}catch(e){}` +
-		`document.getElementById('rlDetailContent').textContent=s;` +
-		`document.getElementById('rlDetailModal').style.display='flex';};}</script>`
-}
 
 func requestLogFilterScript() string {
 	return `<script>if(!window._rlFilterInit){window._rlFilterInit=true;` +

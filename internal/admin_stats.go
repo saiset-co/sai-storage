@@ -348,5 +348,6 @@ func isAdminCollection(name string) bool {
 		strings.HasPrefix(name, "system.") ||
 		strings.HasSuffix(name, "_update_archive") ||
 		strings.HasSuffix(name, "_delete_archive") ||
+		strings.HasSuffix(name, "_create_archive") ||
 		strings.HasSuffix(name, "_request_logs")
 }

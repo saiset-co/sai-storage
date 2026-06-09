@@ -3,9 +3,10 @@ package service
 import (
 	"context"
 	"crypto/md5"
-	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -25,6 +26,7 @@ type StorageService struct {
 	archiveChanges       bool
 	trackQueryStats      bool
 	slowQueryThresholdMs atomic.Int64
+	indexedArchives      sync.Map
 }
 
 func NewStorageService(repo types.StorageRepository, features types.StorageFeaturesConfig) *StorageService {
@@ -82,7 +84,7 @@ func (s *StorageService) CreateDocuments(ctx context.Context, request types.Crea
 	if err != nil {
 		return types.CreateDocumentsResponse{}, saiTypes.WrapError(err, "failed to create documents")
 	}
-	s.afterOp(request.Collection, "create", time.Since(t), int64(len(createdIDs)), nil)
+	s.afterOp(request.Collection, "create", time.Since(t), int64(len(createdIDs)), nil, nil)
 
 	return types.CreateDocumentsResponse{
 		Data:    createdIDs,
@@ -100,7 +102,7 @@ func (s *StorageService) ReadDocuments(ctx context.Context, request types.ReadDo
 	if err != nil {
 		return types.ReadDocumentsResponse{}, saiTypes.WrapError(err, "failed to get documents")
 	}
-	s.afterOp(request.Collection, "find", time.Since(t), int64(len(documents)), mergeKeys(filterKeys(request.Filter), sortKeyList(request.Sort)))
+	s.afterOp(request.Collection, "find", time.Since(t), int64(len(documents)), filterKeys(request.Filter), request.Sort)
 
 	return types.ReadDocumentsResponse{
 		Data:  documents,
@@ -118,7 +120,7 @@ func (s *StorageService) AggregateDocuments(ctx context.Context, request types.A
 	if err != nil {
 		return types.AggregateDocumentsResponse{}, saiTypes.WrapError(err, "failed to aggregate documents")
 	}
-	s.afterOp(request.Collection, "aggregate", time.Since(t), int64(len(documents)), mergeKeys(filterKeys(request.Filter), matchKeys(request.Pipeline), sortKeyList(request.Sort)))
+	s.afterOp(request.Collection, "aggregate", time.Since(t), int64(len(documents)), matchKeys(request.Pipeline), nil)
 
 	return types.AggregateDocumentsResponse{
 		Data:  documents,
@@ -131,9 +133,12 @@ func (s *StorageService) UpdateDocuments(ctx context.Context, request types.Upda
 		return types.UpdateDocumentsResponse{}, saiTypes.WrapError(err, "validation failed")
 	}
 
+	preExisted := false
 	if s.archiveChanges {
-		if err := s.archiveForUpdate(ctx, request); err != nil {
-			return types.UpdateDocumentsResponse{}, err
+		var archErr error
+		preExisted, archErr = s.archiveForUpdate(ctx, request)
+		if archErr != nil {
+			return types.UpdateDocumentsResponse{}, archErr
 		}
 	}
 
@@ -142,7 +147,12 @@ func (s *StorageService) UpdateDocuments(ctx context.Context, request types.Upda
 	if err != nil {
 		return types.UpdateDocumentsResponse{}, err
 	}
-	s.afterOp(request.Collection, "update", time.Since(t), updated, filterKeys(request.Filter))
+
+	if s.archiveChanges && request.Upsert && !preExisted {
+		s.archiveUpsertInsert(ctx, request)
+	}
+
+	s.afterOp(request.Collection, "update", time.Since(t), updated, filterKeys(request.Filter), nil)
 
 	return types.UpdateDocumentsResponse{
 		Data:    []string{},
@@ -166,7 +176,7 @@ func (s *StorageService) DeleteDocuments(ctx context.Context, request types.Dele
 	if err != nil {
 		return types.DeleteDocumentsResponse{}, saiTypes.WrapError(err, "failed to delete documents")
 	}
-	s.afterOp(request.Collection, "delete", time.Since(t), deleted, filterKeys(request.Filter))
+	s.afterOp(request.Collection, "delete", time.Since(t), deleted, filterKeys(request.Filter), nil)
 
 	return types.DeleteDocumentsResponse{
 		Data:    []string{},
@@ -174,13 +184,13 @@ func (s *StorageService) DeleteDocuments(ctx context.Context, request types.Dele
 	}, nil
 }
 
-func (s *StorageService) afterOp(collection, operation string, elapsed time.Duration, docsCount int64, allKeys []string) {
-	if s.trackQueryStats && len(allKeys) > 0 {
-		s.upsertQueryStat(context.Background(), collection, operation, allKeys)
+func (s *StorageService) afterOp(collection, operation string, elapsed time.Duration, docsCount int64, fKeys []string, sortKeys map[string]int) {
+	if s.trackQueryStats && (len(fKeys) > 0 || len(sortKeys) > 0) {
+		s.upsertQueryStat(context.Background(), collection, operation, fKeys, sortKeys)
 	}
 	threshold := s.slowQueryThresholdMs.Load()
-	if threshold > 0 && elapsed.Milliseconds() >= threshold && !isAdminCollection(collection) && len(allKeys) > 0 {
-		go s.repo.LogSlowQuery(context.Background(), collection, operation, elapsed.Milliseconds(), docsCount, allKeys)
+	if threshold > 0 && elapsed.Milliseconds() >= threshold && !isAdminCollection(collection) && (len(fKeys) > 0 || len(sortKeys) > 0) {
+		go s.repo.LogSlowQuery(context.Background(), collection, operation, elapsed.Milliseconds(), docsCount, fKeys, sortKeys)
 	}
 }
 
@@ -192,7 +202,7 @@ func (s *StorageService) Close(ctx context.Context) error {
 	return s.repo.Close(ctx)
 }
 
-func (s *StorageService) LogRequest(ctx context.Context, collection string, data map[string]interface{}) {
+func (s *StorageService) LogRequest(_ context.Context, collection string, data map[string]interface{}) {
 	if !s.logRequests {
 		return
 	}
@@ -206,9 +216,11 @@ func (s *StorageService) LogRequest(ctx context.Context, collection string, data
 		Data:       []interface{}{data},
 	}
 
-	if _, err := s.repo.CreateDocuments(ctx, req); err != nil {
-		sai.Logger().Warn("Failed to log request", zap.Error(err))
-	}
+	go func() {
+		if _, err := s.repo.CreateDocuments(context.Background(), req); err != nil {
+			sai.Logger().Warn("Failed to log request", zap.Error(err))
+		}
+	}()
 }
 
 func (s *StorageService) GetRepo() types.StorageRepository {
@@ -216,9 +228,9 @@ func (s *StorageService) GetRepo() types.StorageRepository {
 }
 
 
-func (s *StorageService) archiveForUpdate(ctx context.Context, request types.UpdateDocumentsRequest) error {
+func (s *StorageService) archiveForUpdate(ctx context.Context, request types.UpdateDocumentsRequest) (bool, error) {
 	if request.Collection == "" {
-		return nil
+		return false, nil
 	}
 
 	docs, _, err := s.repo.ReadDocuments(ctx, types.ReadDocumentsRequest{
@@ -226,16 +238,31 @@ func (s *StorageService) archiveForUpdate(ctx context.Context, request types.Upd
 		Filter:     request.Filter,
 	})
 	if err != nil {
-		return saiTypes.WrapError(err, "failed to read documents for update archive")
+		return false, saiTypes.WrapError(err, "failed to read documents for update archive")
 	}
 
 	if len(docs) == 0 {
-		return nil
+		return false, nil
 	}
 
-	return s.writeArchive(ctx, request.Collection, "update_archive", docs, map[string]interface{}{
+	return true, s.writeArchive(ctx, request.Collection, "update_archive", docs, map[string]interface{}{
 		"archive_filter": request.Filter,
 		"archive_update": request.Data,
+	})
+}
+
+func (s *StorageService) archiveUpsertInsert(ctx context.Context, request types.UpdateDocumentsRequest) {
+	docs, _, err := s.repo.ReadDocuments(ctx, types.ReadDocumentsRequest{
+		Collection: request.Collection,
+		Filter:     request.Filter,
+	})
+	if err != nil || len(docs) == 0 {
+		return
+	}
+	s.writeArchive(ctx, request.Collection, "update_archive", docs, map[string]interface{}{
+		"archive_filter": request.Filter,
+		"archive_update": request.Data,
+		"upsert_insert":  true,
 	})
 }
 
@@ -291,20 +318,22 @@ func (s *StorageService) writeArchive(ctx context.Context, collection, suffix st
 		return saiTypes.WrapError(err, "failed to archive documents")
 	}
 
-	go s.repo.CreateIndex(context.Background(), types.CreateIndexRequest{
-		Collection: req.Collection,
-		Keys:       map[string]int{"archive_operation_id": 1, "archive_time": -1},
-		Name:       "archive_op_idx",
-	})
+	if _, exists := s.indexedArchives.LoadOrStore(req.Collection, true); !exists {
+		go s.repo.CreateIndex(context.Background(), types.CreateIndexRequest{
+			Collection: req.Collection,
+			Keys:       map[string]int{"archive_operation_id": 1, "archive_time": -1},
+			Name:       "archive_op_idx",
+		})
+	}
 
 	return nil
 }
 
-func (s *StorageService) upsertQueryStat(_ context.Context, collection, operation string, keys []string) {
-	if keys == nil {
-		keys = []string{}
+func (s *StorageService) upsertQueryStat(_ context.Context, collection, operation string, fKeys []string, sortKeys map[string]int) {
+	if fKeys == nil {
+		fKeys = []string{}
 	}
-	fingerprint := filterFingerprint(keys)
+	fingerprint := filterFingerprint(fKeys)
 	now := time.Now().UnixNano()
 
 	go func() {
@@ -320,7 +349,8 @@ func (s *StorageService) upsertQueryStat(_ context.Context, collection, operatio
 					"collection":         collection,
 					"operation":          operation,
 					"filter_fingerprint": fingerprint,
-					"filter_keys":        keys,
+					"filter_keys":        fKeys,
+					"sort_keys":          sortKeys,
 					"last_seen":          now,
 				},
 				"$inc": map[string]interface{}{
@@ -366,58 +396,54 @@ func extractFilterKeys(filter map[string]interface{}, keySet map[string]struct{}
 }
 
 func filterFingerprint(keys []string) string {
-	data, _ := json.Marshal(keys)
-	return fmt.Sprintf("%x", md5.Sum(data))
+	return fmt.Sprintf("%x", md5.Sum([]byte(strings.Join(keys, "|"))))
 }
 
 func matchKeys(pipeline types.OrderedPipeline) []string {
+	computed := make(map[string]struct{})
 	keySet := make(map[string]struct{})
 	for _, stage := range pipeline {
 		for _, elem := range stage {
-			if elem.Key == "$match" {
-				if matchDoc, ok := elem.Value.(bson.D); ok {
-					for _, field := range matchDoc {
-						if field.Key != "" && field.Key[0] != '$' {
-							keySet[field.Key] = struct{}{}
-						}
+			switch elem.Key {
+			case "$addFields", "$set":
+				if doc, ok := elem.Value.(bson.D); ok {
+					for _, f := range doc {
+						computed[f.Key] = struct{}{}
 					}
+				}
+			case "$match":
+				if doc, ok := elem.Value.(bson.D); ok {
+					extractBsonDKeys(doc, keySet)
 				}
 			}
 		}
 	}
 	keys := make([]string, 0, len(keySet))
 	for k := range keySet {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func sortKeyList(sortMap map[string]int) []string {
-	if len(sortMap) == 0 {
-		return nil
-	}
-	keys := make([]string, 0, len(sortMap))
-	for k := range sortMap {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func mergeKeys(slices ...[]string) []string {
-	keySet := make(map[string]struct{})
-	for _, s := range slices {
-		for _, k := range s {
-			if k != "" {
-				keySet[k] = struct{}{}
-			}
+		if _, isComputed := computed[k]; !isComputed {
+			keys = append(keys, k)
 		}
 	}
-	keys := make([]string, 0, len(keySet))
-	for k := range keySet {
-		keys = append(keys, k)
-	}
 	sort.Strings(keys)
 	return keys
 }
+
+func extractBsonDKeys(doc bson.D, keySet map[string]struct{}) {
+	for _, field := range doc {
+		if field.Key == "" {
+			continue
+		}
+		if field.Key[0] == '$' {
+			if arr, ok := field.Value.(bson.A); ok {
+				for _, item := range arr {
+					if sub, ok := item.(bson.D); ok {
+						extractBsonDKeys(sub, keySet)
+					}
+				}
+			}
+		} else {
+			keySet[field.Key] = struct{}{}
+		}
+	}
+}
+

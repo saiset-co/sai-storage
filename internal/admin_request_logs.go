@@ -2,7 +2,6 @@ package internal
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"html/template"
 	"strings"
@@ -71,8 +70,8 @@ func (p *AdminPanel) handleAjaxRequestLogs(ctx *saiTypes.RequestCtx) {
 	sb.WriteString(`</select></div>`)
 
 	sb.WriteString(fmt.Sprintf(
-		`<div><label class="block text-sm font-medium text-slate-700 mb-1">Путь (поиск)</label>`+
-			`<input type="text" name="search" value="%s" placeholder="/api/v1/documents/" `+
+		`<div><label class="block text-sm font-medium text-slate-700 mb-1">Поиск (путь, IP, пользователь...)</label>`+
+			`<input type="text" name="search" value="%s" placeholder="regex по тексту..." `+
 			`class="h-10 rounded-xl border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" style="min-width:220px"></div>`,
 		template.HTMLEscapeString(searchPath),
 	))
@@ -85,7 +84,14 @@ func (p *AdminPanel) handleAjaxRequestLogs(ctx *saiTypes.RequestCtx) {
 		filter["method"] = selectedMethod
 	}
 	if searchPath != "" {
-		filter["path"] = map[string]interface{}{"$regex": searchPath, "$options": "i"}
+		rx := map[string]interface{}{"$regex": searchPath, "$options": "i"}
+		filter["$or"] = []interface{}{
+			map[string]interface{}{"path": rx},
+			map[string]interface{}{"ip": rx},
+			map[string]interface{}{"user_id": rx},
+			map[string]interface{}{"collection": rx},
+			map[string]interface{}{"body": rx},
+		}
 	}
 
 	page := pageNum(ctx)
@@ -125,7 +131,7 @@ func (p *AdminPanel) handleAjaxRequestLogs(ctx *saiTypes.RequestCtx) {
 		path, _ := doc["path"].(string)
 		ip, _ := doc["ip"].(string)
 
-		docJSON, _ := json.Marshal(doc)
+		docJSON, _ := ctx.Marshal(doc)
 
 		sb.WriteString(`<tr class="hover:bg-slate-50">`)
 		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">%s</td>`, timeStr))

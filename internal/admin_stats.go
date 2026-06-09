@@ -98,7 +98,7 @@ func (p *AdminPanel) handleAjaxCollectionBrowse(ctx *saiTypes.RequestCtx) {
 	sb.WriteString(`</div>`)
 
 	var filter map[string]interface{}
-	if err := json.Unmarshal([]byte(filterRaw), &filter); err != nil {
+	if err := ctx.Unmarshal([]byte(filterRaw), &filter); err != nil {
 		sb.WriteString(`<p class="text-rose-500 text-sm">Неверный JSON: ` + template.HTMLEscapeString(err.Error()) + `</p>`)
 		ctx.Response.SetBodyString(sb.String())
 		return

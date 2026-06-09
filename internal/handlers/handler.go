@@ -170,13 +170,14 @@ func (h *Handler) logRequest(ctx *saiTypes.RequestCtx, collection string, body i
 		"collection":   collection,
 		"method":       string(ctx.Method()),
 		"path":         string(ctx.Path()),
-		"query":        h.queryArgsToMap(ctx),
 		"request_time": now.Format(time.RFC3339),
 		"request_unix": now.Unix(),
 	}
 
 	if body != nil {
-		requestInfo["body"] = body
+		if b, err := ctx.Marshal(body); err == nil {
+			requestInfo["body"] = string(b)
+		}
 	}
 
 	if requestID := ctx.Request.Header.Peek("X-Request-ID"); len(requestID) > 0 {
@@ -199,14 +200,6 @@ func (h *Handler) logRequest(ctx *saiTypes.RequestCtx, collection string, body i
 	}
 
 	h.service.LogRequest(ctx, collection, requestInfo)
-}
-
-func (h *Handler) queryArgsToMap(ctx *saiTypes.RequestCtx) map[string]string {
-	query := make(map[string]string)
-	ctx.QueryArgs().VisitAll(func(key, value []byte) {
-		query[string(key)] = string(value)
-	})
-	return query
 }
 
 func (h *Handler) getAuthenticatedUser(ctx *saiTypes.RequestCtx) string {

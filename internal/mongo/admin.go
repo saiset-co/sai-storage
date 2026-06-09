@@ -3,7 +3,6 @@ package mongo
 import (
 	"context"
 	"crypto/md5"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -198,15 +197,24 @@ func (r *Repository) GetSlowQueries(ctx context.Context, limit int) ([]types.Slo
 	return result, nil
 }
 
-func (r *Repository) GetArchiveGroups(ctx context.Context, collection string, skip, limit int) ([]types.ArchiveGroup, int64, error) {
+func (r *Repository) GetArchiveGroups(ctx context.Context, collection, search string, skip, limit int) ([]types.ArchiveGroup, int64, error) {
 	col := r.client.database.Collection(collection)
 
-	match := bson.D{{Key: "$match", Value: bson.D{
+	matchFilter := bson.D{
 		{Key: "archive_operation_id", Value: bson.D{
 			{Key: "$exists", Value: true},
 			{Key: "$ne", Value: ""},
 		}},
-	}}}
+	}
+	if search != "" {
+		rx := bson.D{{Key: "$regex", Value: search}, {Key: "$options", Value: "i"}}
+		matchFilter = append(matchFilter, bson.E{Key: "$or", Value: bson.A{
+			bson.D{{Key: "archive_operation_id", Value: rx}},
+			bson.D{{Key: "internal_id", Value: rx}},
+			bson.D{{Key: "source_collection", Value: rx}},
+		}})
+	}
+	match := bson.D{{Key: "$match", Value: matchFilter}}
 	group := bson.D{{Key: "$group", Value: bson.D{
 		{Key: "_id", Value: "$archive_operation_id"},
 		{Key: "archive_time", Value: bson.D{{Key: "$max", Value: "$archive_time"}}},
@@ -260,7 +268,7 @@ func (r *Repository) GetArchiveGroups(ctx context.Context, collection string, sk
 	return result, total, nil
 }
 
-func (r *Repository) LogSlowQuery(ctx context.Context, collection, operation string, durationMs, docsCount int64, filterKeys []string) error {
+func (r *Repository) LogSlowQuery(ctx context.Context, collection, operation string, durationMs, docsCount int64, filterKeys []string, sortKeys map[string]int) error {
 	col := r.client.database.Collection("_admin_slow_queries")
 	_, err := col.InsertOne(ctx, bson.M{
 		"collection":         collection,
@@ -268,6 +276,7 @@ func (r *Repository) LogSlowQuery(ctx context.Context, collection, operation str
 		"duration_ms":        durationMs,
 		"docs_count":         docsCount,
 		"filter_keys":        filterKeys,
+		"sort_keys":          sortKeys,
 		"filter_fingerprint": slowQueryFingerprint(filterKeys),
 		"ts":                 time.Now().UnixNano(),
 	})
@@ -275,8 +284,7 @@ func (r *Repository) LogSlowQuery(ctx context.Context, collection, operation str
 }
 
 func slowQueryFingerprint(keys []string) string {
-	data, _ := json.Marshal(keys)
-	return fmt.Sprintf("%x", md5.Sum(data))
+	return fmt.Sprintf("%x", md5.Sum([]byte(strings.Join(keys, "|"))))
 }
 
 func toInt64(v interface{}) int64 {

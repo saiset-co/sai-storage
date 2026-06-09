@@ -26,10 +26,10 @@ func (r *Repository) GetSlowQueries(ctx context.Context, limit int) ([]types.Slo
 	return nil, nil
 }
 
-func (r *Repository) LogSlowQuery(ctx context.Context, collection, operation string, durationMs, docsCount int64, filterKeys []string) error {
+func (r *Repository) LogSlowQuery(ctx context.Context, collection, operation string, durationMs, docsCount int64, filterKeys []string, sortKeys map[string]int) error {
 	return nil
 }
 
-func (r *Repository) GetArchiveGroups(ctx context.Context, collection string, skip, limit int) ([]types.ArchiveGroup, int64, error) {
+func (r *Repository) GetArchiveGroups(ctx context.Context, collection, search string, skip, limit int) ([]types.ArchiveGroup, int64, error) {
 	return nil, 0, nil
 }

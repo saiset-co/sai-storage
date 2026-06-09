@@ -64,10 +64,19 @@ func (h *Handler) RestoreUpdate(ctx *saiTypes.RequestCtx) {
 		if !ok {
 			continue
 		}
+		filter := map[string]interface{}{"internal_id": internalID}
+		if upsertInsert, _ := doc["upsert_insert"].(bool); upsertInsert {
+			h.service.GetRepo().DeleteDocuments(context.Background(), types.DeleteDocumentsRequest{
+				Collection: collection,
+				Filter:     filter,
+			})
+			restored++
+			continue
+		}
 		data := cleanArchiveFields(doc)
 		h.service.GetRepo().DeleteDocuments(context.Background(), types.DeleteDocumentsRequest{
 			Collection: collection,
-			Filter:     map[string]interface{}{"internal_id": internalID},
+			Filter:     filter,
 		})
 		if _, err := h.service.GetRepo().CreateDocuments(context.Background(), types.CreateDocumentsRequest{
 			Collection: collection,
@@ -361,6 +370,7 @@ func cleanArchiveFields(doc map[string]interface{}) map[string]interface{} {
 		"source_collection":    true,
 		"archive_filter":       true,
 		"archive_update":       true,
+		"upsert_insert":        true,
 		"restored_at":          true,
 		"_id":                  true,
 	}

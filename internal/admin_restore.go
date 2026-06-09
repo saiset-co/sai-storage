@@ -65,10 +65,11 @@ func (p *AdminPanel) buildAjaxArchiveContent(ctx *saiTypes.RequestCtx, suffix, r
 	}
 
 	sourceCollection := strings.TrimSuffix(collection, "_"+suffix)
+	search := string(ctx.QueryArgs().Peek("search"))
 	page := pageNum(ctx)
 	skip := (page - 1) * adminPerPage
 
-	groups, total, err := p.service.GetRepo().GetArchiveGroups(context.Background(), collection, skip, adminPerPage)
+	groups, total, err := p.service.GetRepo().GetArchiveGroups(context.Background(), collection, search, skip, adminPerPage)
 	if err != nil {
 		ctx.Response.SetBodyString(`<p class="text-rose-500 text-sm">` + template.HTMLEscapeString(err.Error()) + `</p>`)
 		return
@@ -76,6 +77,7 @@ func (p *AdminPanel) buildAjaxArchiveContent(ctx *saiTypes.RequestCtx, suffix, r
 
 	var sb strings.Builder
 
+	sb.WriteString(archiveSearchForm(collection, search, baseAjaxURL, panelID))
 	sb.WriteString(archiveDocsModal(restoreAction))
 	sb.WriteString(archiveQueryModal())
 
@@ -117,6 +119,9 @@ func (p *AdminPanel) buildAjaxArchiveContent(ctx *saiTypes.RequestCtx, suffix, r
 	sb.WriteString(`</tbody></table></div>`)
 
 	ajaxURL := baseAjaxURL + "?collection=" + collection
+	if search != "" {
+		ajaxURL += "&search=" + search
+	}
 	sb.WriteString(ajaxPaginationBar(page, total, adminPerPage, ajaxURL, panelID))
 
 	if len(groups) == 0 {
@@ -192,7 +197,7 @@ func (p *AdminPanel) handleArchiveDocs(ctx *saiTypes.RequestCtx) {
 			} else if s, ok := v.(string); ok {
 				valStr = s
 			} else {
-				b, _ := json.Marshal(v)
+				b, _ := ctx.Marshal(v)
 				valStr = string(b)
 			}
 			valStr = truncate(valStr, 60)
@@ -300,6 +305,20 @@ func formatArchiveShellQuery(sourceCollection, op string, filter, update interfa
 		op = "deleteMany"
 	}
 	return fmt.Sprintf("db.%s.%s(%s)", sourceCollection, op, filterStr)
+}
+
+func archiveSearchForm(collection, search, baseAjaxURL, panelID string) string {
+	return fmt.Sprintf(
+		`<form onsubmit="_loadPanel('%s?collection=%s&search='+encodeURIComponent(this.search.value),'%s',null);return false" `+
+			`class="flex items-center gap-2 mb-4">`+
+			`<input name="search" value="%s" placeholder="Поиск по Operation ID, internal_id..." `+
+			`class="h-9 flex-1 rounded-xl border border-slate-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">`+
+			`<button type="submit" class="inline-flex h-9 items-center rounded-xl bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-500">Найти</button>`+
+			`</form>`,
+		baseAjaxURL, template.HTMLEscapeString(collection),
+		panelID,
+		template.HTMLEscapeString(search),
+	)
 }
 
 func truncate(s string, n int) string {

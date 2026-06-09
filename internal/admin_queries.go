@@ -56,9 +56,10 @@ func (p *AdminPanel) pageQueryStats(ctx *saiTypes.RequestCtx) (*admin.PageData, 
 		count := toAnyInt64(doc["count"])
 		lastSeen := formatNanoTwoLine(toAnyInt64(doc["last_seen"]))
 
-		keys := toStringSlice(doc["filter_keys"])
-		keysJSON, _ := json.Marshal(keys)
-		queryStr := formatQueryPreview(collection, operation, keys)
+		filterKeys := toStringSlice(doc["filter_keys"])
+		sortKeys := toIntMap(doc["sort_keys"])
+		keysJSON, _ := ctx.Marshal(buildIndexSpec(filterKeys, sortKeys))
+		queryStr := formatQueryPreview(collection, operation, filterKeys)
 
 		primaryBtn := fmt.Sprintf(
 			`<button data-collection="%s" data-keys="%s" onclick="_openIdxCreate(this)" `+
@@ -74,7 +75,7 @@ func (p *AdminPanel) pageQueryStats(ctx *saiTypes.RequestCtx) (*admin.PageData, 
 		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3">%s</td>`, template.HTMLEscapeString(operation)))
 		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3 font-semibold">%d</td>`, count))
 		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3 text-xs text-slate-500">%s</td>`, lastSeen))
-		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3 text-center">%d</td>`, len(keys)))
+		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3 text-center">%d</td>`, len(filterKeys)))
 		sb.WriteString(`<td class="px-4 py-3">` + sdWrap(primaryBtn, "#d97706", dropdownItems) + `</td>`)
 		sb.WriteString(`</tr>`)
 	}
@@ -167,9 +168,10 @@ func (p *AdminPanel) pageSlowQueries(ctx *saiTypes.RequestCtx) (*admin.PageData,
 		count := toAnyInt64(doc["count"])
 		lastSeen := formatNanoTwoLine(toAnyInt64(doc["last_seen"]))
 
-		filterKeys := toStringSlice(doc["filter_keys"])
-		keysJSON, _ := json.Marshal(filterKeys)
-		queryStr := formatQueryPreview(collection, operation, filterKeys)
+		fKeys := toStringSlice(doc["filter_keys"])
+		sKeys := toIntMap(doc["sort_keys"])
+		keysJSON, _ := ctx.Marshal(buildIndexSpec(fKeys, sKeys))
+		queryStr := formatQueryPreview(collection, operation, fKeys)
 
 		primaryBtn := fmt.Sprintf(
 			`<button data-collection="%s" data-keys="%s" onclick="_openIdxCreate(this)" `+
@@ -187,7 +189,7 @@ func (p *AdminPanel) pageSlowQueries(ctx *saiTypes.RequestCtx) (*admin.PageData,
 		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3">%s</td>`, template.HTMLEscapeString(operation)))
 		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3">%d</td>`, count))
 		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3 text-xs text-slate-500">%s</td>`, lastSeen))
-		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3 text-center">%d</td>`, len(filterKeys)))
+		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3 text-center">%d</td>`, len(fKeys)))
 		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3 font-semibold text-rose-600">%d мс</td>`, durationMs))
 		sb.WriteString(`<td class="px-4 py-3">` + docsCell + `</td>`)
 		sb.WriteString(`<td class="px-4 py-3">` + sdWrap(primaryBtn, "#d97706", dropdownItems) + `</td>`)
@@ -325,6 +327,48 @@ func formatCustomQuery(collection, operation string, body interface{}, queryRaw 
 	return fmt.Sprintf("db.%s.%s(%s)", collection, operation, bodyJSON)
 }
 
+type indexKeySpec struct {
+	K string `json:"k"`
+	D int    `json:"d"`
+}
+
+func buildIndexSpec(filterKeys []string, sortKeys map[string]int) []indexKeySpec {
+	sortSet := make(map[string]bool, len(sortKeys))
+	for k := range sortKeys {
+		sortSet[k] = true
+	}
+	spec := make([]indexKeySpec, 0, len(filterKeys)+len(sortKeys))
+	for _, k := range filterKeys {
+		if !sortSet[k] {
+			spec = append(spec, indexKeySpec{K: k, D: 1})
+		}
+	}
+	sorted := make([]string, 0, len(sortKeys))
+	for k := range sortKeys {
+		sorted = append(sorted, k)
+	}
+	sort.Strings(sorted)
+	for _, k := range sorted {
+		spec = append(spec, indexKeySpec{K: k, D: sortKeys[k]})
+	}
+	return spec
+}
+
+func toIntMap(v interface{}) map[string]int {
+	if v == nil {
+		return nil
+	}
+	m, ok := v.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	result := make(map[string]int, len(m))
+	for k, val := range m {
+		result[k] = int(toAnyInt64(val))
+	}
+	return result
+}
+
 func toStringSlice(v interface{}) []string {
 	var items []interface{}
 	switch a := v.(type) {
@@ -409,7 +453,7 @@ func (p *AdminPanel) handleRunCustomQuery(ctx *saiTypes.RequestCtx) {
 	case "find", "findone":
 		var filter map[string]interface{}
 		if rawBody != "" {
-			json.Unmarshal([]byte(rawBody), &filter)
+			ctx.Unmarshal([]byte(rawBody), &filter)
 		}
 		limit := 100
 		if opLower == "findone" {
@@ -424,7 +468,7 @@ func (p *AdminPanel) handleRunCustomQuery(ctx *saiTypes.RequestCtx) {
 		docs, total, err = resp.Data, resp.Total, e
 	case "aggregate":
 		req := types.AggregateDocumentsRequest{Collection: collection, Count: 1}
-		json.Unmarshal([]byte(rawBody), &req.Pipeline)
+		ctx.Unmarshal([]byte(rawBody), &req.Pipeline)
 		resp, e := p.service.AggregateDocuments(context.Background(), req)
 		docs, total, err = resp.Data, resp.Total, e
 	case "updateone":
@@ -434,8 +478,8 @@ func (p *AdminPanel) handleRunCustomQuery(ctx *saiTypes.RequestCtx) {
 			return
 		}
 		var filterMap, updateMap map[string]interface{}
-		json.Unmarshal([]byte(arg1), &filterMap)
-		json.Unmarshal([]byte(arg2), &updateMap)
+		ctx.Unmarshal([]byte(arg1), &filterMap)
+		ctx.Unmarshal([]byte(arg2), &updateMap)
 		resp, e := p.service.UpdateDocuments(context.Background(), types.UpdateDocumentsRequest{
 			Collection: collection,
 			Filter:     filterMap,
@@ -459,8 +503,8 @@ func (p *AdminPanel) handleRunCustomQuery(ctx *saiTypes.RequestCtx) {
 			return
 		}
 		var filterMap, updateMap map[string]interface{}
-		json.Unmarshal([]byte(arg1), &filterMap)
-		json.Unmarshal([]byte(arg2), &updateMap)
+		ctx.Unmarshal([]byte(arg1), &filterMap)
+		ctx.Unmarshal([]byte(arg2), &updateMap)
 		resp, e := p.service.UpdateDocuments(context.Background(), types.UpdateDocumentsRequest{
 			Collection: collection,
 			Filter:     filterMap,
@@ -479,7 +523,7 @@ func (p *AdminPanel) handleRunCustomQuery(ctx *saiTypes.RequestCtx) {
 		return
 	case "deleteone":
 		var filterMap map[string]interface{}
-		json.Unmarshal([]byte(rawBody), &filterMap)
+		ctx.Unmarshal([]byte(rawBody), &filterMap)
 		resp, e := p.service.DeleteDocuments(context.Background(), types.DeleteDocumentsRequest{
 			Collection: collection,
 			Filter:     filterMap,
@@ -498,7 +542,7 @@ func (p *AdminPanel) handleRunCustomQuery(ctx *saiTypes.RequestCtx) {
 		return
 	case "deletemany", "delete":
 		var filterMap map[string]interface{}
-		json.Unmarshal([]byte(rawBody), &filterMap)
+		ctx.Unmarshal([]byte(rawBody), &filterMap)
 		resp, e := p.service.DeleteDocuments(context.Background(), types.DeleteDocumentsRequest{
 			Collection: collection,
 			Filter:     filterMap,
@@ -570,7 +614,7 @@ func (p *AdminPanel) handleRunCustomQuery(ctx *saiTypes.RequestCtx) {
 			} else if s, ok := v.(string); ok {
 				valStr = s
 			} else {
-				b, _ := json.Marshal(v)
+				b, _ := ctx.Marshal(v)
 				valStr = string(b)
 			}
 			valStr = truncate(valStr, 80)
@@ -641,12 +685,12 @@ func indexCreatorScript() string {
 		`window._idxAddCard=function(){document.getElementById('idxCardsBody').appendChild(_idxNewCard());};` +
 		`window._openIdxCreate=function(btn){` +
 		`_idxCollection=btn.getAttribute('data-collection');` +
-		`var keys=[];try{keys=JSON.parse(btn.getAttribute('data-keys'));}catch(e){}` +
+		`var spec=[];try{spec=JSON.parse(btn.getAttribute('data-keys'));}catch(e){}` +
 		`document.getElementById('idxCreateColDisplay').textContent=_idxCollection;` +
 		`var body=document.getElementById('idxCardsBody');body.innerHTML='';` +
 		`var card=_idxNewCard();body.appendChild(card);` +
-		`if(keys.length>0){var rows=card.querySelector('.idx-rows');rows.innerHTML='';` +
-		`keys.forEach(function(k){rows.appendChild(_idxNewRow(k,1));});}` +
+		`if(spec.length>0){var rows=card.querySelector('.idx-rows');rows.innerHTML='';` +
+		`spec.forEach(function(f){rows.appendChild(_idxNewRow(f.k,f.d));});}` +
 		`document.getElementById('idxCreateErr').textContent='';` +
 		`document.getElementById('idxCreateResult').innerHTML='';` +
 		`document.getElementById('idxCreateModal').style.display='flex';};` +

@@ -87,7 +87,7 @@ func (p *AdminPanel) buildAjaxArchiveContent(ctx *saiTypes.RequestCtx, suffix, r
 	sb.WriteString(`</tr></thead><tbody class="divide-y divide-slate-100">`)
 
 	for _, g := range groups {
-		queryFull := formatArchiveShellQuery(sourceCollection, suffix, g.Filter, g.Update)
+		queryFull := formatArchiveShellQuery(sourceCollection, "", g.Filter, g.Update)
 
 		rowStyle := ""
 		if g.RestoredAt > 0 {

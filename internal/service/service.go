@@ -100,7 +100,7 @@ func (s *StorageService) ReadDocuments(ctx context.Context, request types.ReadDo
 	if err != nil {
 		return types.ReadDocumentsResponse{}, saiTypes.WrapError(err, "failed to get documents")
 	}
-	s.afterOp(request.Collection, "read", time.Since(t), int64(len(documents)), mergeKeys(filterKeys(request.Filter), sortKeyList(request.Sort)))
+	s.afterOp(request.Collection, "find", time.Since(t), int64(len(documents)), mergeKeys(filterKeys(request.Filter), sortKeyList(request.Sort)))
 
 	return types.ReadDocumentsResponse{
 		Data:  documents,
@@ -214,6 +214,7 @@ func (s *StorageService) LogRequest(ctx context.Context, collection string, data
 func (s *StorageService) GetRepo() types.StorageRepository {
 	return s.repo
 }
+
 
 func (s *StorageService) archiveForUpdate(ctx context.Context, request types.UpdateDocumentsRequest) error {
 	if request.Collection == "" {
@@ -338,12 +339,30 @@ func filterKeys(filter map[string]interface{}) []string {
 	if len(filter) == 0 {
 		return []string{}
 	}
-	keys := make([]string, 0, len(filter))
-	for k := range filter {
+	keySet := make(map[string]struct{})
+	extractFilterKeys(filter, keySet)
+	keys := make([]string, 0, len(keySet))
+	for k := range keySet {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+func extractFilterKeys(filter map[string]interface{}, keySet map[string]struct{}) {
+	for k, v := range filter {
+		if len(k) > 0 && k[0] == '$' {
+			if arr, ok := v.([]interface{}); ok {
+				for _, item := range arr {
+					if sub, ok := item.(map[string]interface{}); ok {
+						extractFilterKeys(sub, keySet)
+					}
+				}
+			}
+		} else {
+			keySet[k] = struct{}{}
+		}
+	}
 }
 
 func filterFingerprint(keys []string) string {

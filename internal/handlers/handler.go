@@ -194,6 +194,10 @@ func (h *Handler) logRequest(ctx *saiTypes.RequestCtx, collection string, body i
 		requestInfo["ip"] = ip
 	}
 
+	if userID := string(ctx.Request.Header.Peek("X-Forwarded-User-ID")); userID != "" {
+		requestInfo["user_id"] = userID
+	}
+
 	h.service.LogRequest(ctx, collection, requestInfo)
 }
 

@@ -7,7 +7,6 @@ import (
 	"html/template"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/saiset-co/sai-service/admin"
 	saiTypes "github.com/saiset-co/sai-service/types"
@@ -37,13 +36,13 @@ func (p *AdminPanel) buildArchivePage(suffix, title, panelID string) (*admin.Pag
 		if strings.HasSuffix(c, "_"+suffix) {
 			ajaxPath := "/admin/ajax/" + strings.ReplaceAll(suffix, "_", "-")
 			items = append(items, twoColItem{
-				Label: c,
+				Label: strings.TrimSuffix(c, "_"+suffix),
 				URL:   ajaxPath + "?collection=" + c,
 			})
 		}
 	}
 
-	scripts := twoColScript() + archiveDocsScript() + sdScript()
+	scripts := twoColScript() + archiveDocsScript()
 
 	return &admin.PageData{
 		Sections: []admin.Section{
@@ -87,7 +86,6 @@ func (p *AdminPanel) buildAjaxArchiveContent(ctx *saiTypes.RequestCtx, suffix, r
 	var sb strings.Builder
 
 	sb.WriteString(archiveSearchForm(collection, search, baseAjaxURL, panelID))
-	sb.WriteString(archiveDocsModal(restoreAction))
 	sb.WriteString(archiveQueryModal())
 
 	sb.WriteString(`<div class="overflow-x-auto"><table class="min-w-full divide-y divide-slate-200 text-sm">`)
@@ -107,29 +105,22 @@ func (p *AdminPanel) buildAjaxArchiveContent(ctx *saiTypes.RequestCtx, suffix, r
 		}
 
 		primaryBtn := fmt.Sprintf(
-			`<button data-q="%s" data-op-id="%s" data-log-col="%s" onclick="_openArchiveDetails(this)" `+
-				`style="display:inline-flex;align-items:center;padding:5px 12px;background:#6366f1;border:none;cursor:pointer;font-size:12px;font-weight:600;color:white;border-radius:8px 0 0 8px;white-space:nowrap">Детали</button>`,
+			`<button data-q="%s" data-op-id="%s" data-log-col="%s" data-arc-col="%s" data-src-col="%s" data-action="%s" data-count="%d" data-restored="%d" onclick="_openArchiveDetails(this)" `+
+				`style="display:inline-flex;align-items:center;padding:5px 12px;background:#6366f1;border:none;cursor:pointer;font-size:12px;font-weight:600;color:white;border-radius:8px;white-space:nowrap">Детали</button>`,
 			template.HTMLEscapeString(queryFull),
 			template.HTMLEscapeString(g.OperationID),
 			template.HTMLEscapeString(logCollection),
-		)
-		docsBtn := fmt.Sprintf(
-			`<button type="button" data-col="%s" data-opid="%s" data-srccol="%s" data-action="%s" data-count="%d" data-restored="%d" onclick="_openArchiveDocsBtn(this)" `+
-				`style="display:block;width:100%%;text-align:left;padding:6px 10px;border-radius:6px;font-size:12px;font-weight:500;color:#334155;background:none;border:none;cursor:pointer;white-space:nowrap" `+
-				`onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background=''">Документы</button>`,
 			template.HTMLEscapeString(collection),
-			template.HTMLEscapeString(g.OperationID),
 			template.HTMLEscapeString(sourceCollection),
 			template.HTMLEscapeString(restoreAction),
 			g.Count, g.RestoredAt,
 		)
-		dropdownItems := []string{docsBtn}
 
 		sb.WriteString(fmt.Sprintf(`<tr class="hover:bg-slate-50"%s>`, rowStyle))
 		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">%s</td>`, formatNanoTwoLine(g.ArchiveTime)))
 		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3 font-mono text-xs text-slate-400">%s</td>`, g.OperationID))
 		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3 font-semibold">%d</td>`, g.Count))
-		sb.WriteString(`<td class="px-4 py-3">` + sdWrap(primaryBtn, "#6366f1", dropdownItems) + `</td>`)
+		sb.WriteString(`<td class="px-4 py-3">` + primaryBtn + `</td>`)
 		sb.WriteString(`</tr>`)
 	}
 	sb.WriteString(`</tbody></table></div>`)
@@ -175,52 +166,6 @@ func (p *AdminPanel) handleArchiveDocs(ctx *saiTypes.RequestCtx) {
 		sb.WriteString(`<p class="text-slate-500 text-sm">Документов не найдено.</p>`)
 		ctx.Response.SetBodyString(sb.String())
 		return
-	}
-
-	sourceCollection := ""
-	if sc, ok := docs[0]["source_collection"].(string); ok {
-		sourceCollection = sc
-	}
-	if sourceCollection == "" {
-		for _, sfx := range []string{"_update_archive", "_delete_archive", "_create_archive"} {
-			if strings.HasSuffix(archiveCollection, sfx) {
-				sourceCollection = strings.TrimSuffix(archiveCollection, sfx)
-				break
-			}
-		}
-	}
-	if sourceCollection != "" {
-		logDocs, _, _ := p.service.GetRepo().ReadDocuments(context.Background(), types.ReadDocumentsRequest{
-			Collection: sourceCollection + "_request_logs",
-			Filter:     map[string]interface{}{"operation_id": opID},
-			Limit:      1,
-		})
-		if len(logDocs) > 0 {
-			rl := logDocs[0]
-			sb.WriteString(`<div style="background:#f8fafc;border-radius:10px;padding:12px 16px;margin-bottom:14px;border:1px solid #e2e8f0;font-size:12px">`)
-			sb.WriteString(`<div style="display:flex;flex-wrap:wrap;gap:4px 20px;margin-bottom:4px">`)
-			if ts, ok := rl["request_unix"].(float64); ok && ts > 0 {
-				sb.WriteString(archiveRLCell("Дата", time.Unix(int64(ts), 0).Format("02.01.2006 15:04:05")))
-			}
-			for _, pair := range [][2]string{{"Метод", "method"}, {"Путь", "path"}, {"IP", "ip"}, {"User", "user"}, {"User ID", "user_id"}} {
-				if v, ok := rl[pair[1]].(string); ok && v != "" {
-					sb.WriteString(archiveRLCell(pair[0], v))
-				}
-			}
-			sb.WriteString(`</div>`)
-			if body, ok := rl["body"].(string); ok && body != "" {
-				prettyBody := body
-				var raw interface{}
-				if json.Unmarshal([]byte(body), &raw) == nil {
-					if b, err := json.MarshalIndent(raw, "", "  "); err == nil {
-						prettyBody = string(b)
-					}
-				}
-				sb.WriteString(`<div style="color:#64748b;margin-bottom:3px">Тело запроса:</div>`)
-				sb.WriteString(`<pre style="font-size:11px;background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:10px;overflow-x:auto;white-space:pre-wrap;word-break:break-word;max-height:200px;margin:0">` + template.HTMLEscapeString(prettyBody) + `</pre>`)
-			}
-			sb.WriteString(`</div>`)
-		}
 	}
 
 	metaSkip := map[string]bool{
@@ -274,77 +219,71 @@ func (p *AdminPanel) handleArchiveDocs(ctx *saiTypes.RequestCtx) {
 
 func archiveQueryModal() string {
 	return `<div id="archiveQueryModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.5);z-index:50;align-items:center;justify-content:center;padding:16px">` +
-		`<div style="background:white;border-radius:16px;width:100%;max-width:800px;max-height:90vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 25px 50px rgba(0,0,0,0.3)">` +
+		`<div style="background:white;border-radius:16px;width:100%;max-width:900px;max-height:90vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 25px 50px rgba(0,0,0,0.3)">` +
 		`<div style="display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid #e2e8f0;flex:0 0 auto">` +
 		`<h2 style="font-size:18px;font-weight:700;color:#0f172a">Детали операции</h2>` +
-		`<button onclick="document.getElementById('archiveQueryModal').style.display='none'" ` +
-		`style="width:32px;height:32px;border-radius:8px;background:#f1f5f9;border:none;cursor:pointer;font-size:18px;color:#64748b">×</button>` +
-		`</div>` +
-		`<div style="flex:1 1 auto;overflow-y:auto;padding:24px">` +
-		`<div id="archiveQueryLogInfo" style="display:none"></div>` +
-		`<pre id="archiveQueryContent" style="font-size:13px;color:#1e293b;background:#f8fafc;border-radius:8px;padding:16px;overflow-x:auto;white-space:pre-wrap;word-break:break-all"></pre>` +
-		`</div></div></div>`
-}
-
-func archiveDocsModal(restoreAction string) string {
-	return `<div id="archiveDocsModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.5);z-index:50;align-items:center;justify-content:center;padding:16px">` +
-		`<div style="background:white;border-radius:16px;width:100%;max-width:1000px;max-height:90vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 25px 50px rgba(0,0,0,0.3)">` +
-		`<div style="display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid #e2e8f0;flex:0 0 auto">` +
-		`<h2 style="font-size:18px;font-weight:700;color:#0f172a">Документы операции</h2>` +
 		`<div style="display:flex;align-items:center;gap:12px">` +
-		`<form id="archiveRestoreForm" method="POST" action="` + restoreAction + `" onsubmit="return _archiveRestore(event)">` +
+		`<form id="archiveRestoreForm" style="display:none" method="POST" onsubmit="return _archiveRestore(event)">` +
 		`<input type="hidden" id="archiveRestoreCol" name="collection">` +
 		`<input type="hidden" id="archiveRestoreOpID" name="archive_operation_id">` +
 		`<button id="archiveRestoreBtn" type="submit" class="inline-flex h-9 items-center rounded-xl bg-amber-500 px-4 text-sm font-semibold text-white hover:bg-amber-400">Восстановить</button>` +
 		`</form>` +
-		`<button onclick="document.getElementById('archiveDocsModal').style.display='none'" ` +
+		`<button onclick="document.getElementById('archiveQueryModal').style.display='none'" ` +
 		`style="width:32px;height:32px;border-radius:8px;background:#f1f5f9;border:none;cursor:pointer;font-size:18px;color:#64748b">×</button>` +
 		`</div></div>` +
-		`<div style="flex:1 1 auto;overflow-y:auto;padding:24px"><div id="archiveDocsContent" class="text-sm text-slate-500">—</div></div>` +
-		`</div></div>`
+		`<div style="flex:1 1 auto;overflow-y:auto;padding:24px">` +
+		`<div id="archiveQueryLogInfo" style="display:none"></div>` +
+		`<div id="archiveQueryDocsSection" style="display:none;margin-top:16px">` +
+		`<div style="font-size:14px;font-weight:600;color:#334155;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #e2e8f0">Документы операции</div>` +
+		`<div id="archiveDocsContent" class="text-sm text-slate-500">—</div>` +
+		`</div>` +
+		`<pre id="archiveQueryContent" style="font-size:13px;color:#1e293b;background:#f8fafc;border-radius:8px;padding:16px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;display:none"></pre>` +
+		`</div></div></div>`
 }
+
 
 func archiveDocsScript() string {
 	return `<script>if(!window._archiveInit){window._archiveInit=true;` +
 		`window._openArchiveDetails=function(btn){` +
-		`var q=btn.getAttribute('data-q');` +
-		`var opID=btn.getAttribute('data-op-id');` +
-		`var logCol=btn.getAttribute('data-log-col');` +
+		`var q=btn.getAttribute('data-q')||'';` +
+		`var opID=btn.getAttribute('data-op-id')||'';` +
+		`var logCol=btn.getAttribute('data-log-col')||'';` +
+		`var arcCol=btn.getAttribute('data-arc-col')||'';` +
+		`var srcCol=btn.getAttribute('data-src-col')||'';` +
+		`var action=btn.getAttribute('data-action')||'';` +
+		`var count=parseInt(btn.getAttribute('data-count')||'0',10);` +
+		`var restored=parseInt(btn.getAttribute('data-restored')||'0',10);` +
 		`var c=document.getElementById('archiveQueryContent');` +
-		`c.style.display='none';c.textContent=q||'';` +
+		`c.style.display='none';c.textContent=q;` +
 		`var infoDiv=document.getElementById('archiveQueryLogInfo');` +
 		`infoDiv.innerHTML='';infoDiv.style.display='none';` +
+		`var docsSection=document.getElementById('archiveQueryDocsSection');` +
+		`docsSection.style.display='none';` +
+		`document.getElementById('archiveDocsContent').innerHTML='—';` +
+		`var restoreForm=document.getElementById('archiveRestoreForm');` +
+		`if(arcCol&&srcCol&&action&&opID){` +
+		`restoreForm.style.display='block';` +
+		`restoreForm.setAttribute('action',action);` +
+		`document.getElementById('archiveRestoreCol').value=srcCol;` +
+		`document.getElementById('archiveRestoreOpID').value=opID;` +
+		`var rb=document.getElementById('archiveRestoreBtn');` +
+		`if(restored>0){rb.disabled=true;rb.textContent='Уже восстановлено';rb.className='inline-flex h-9 items-center rounded-xl bg-slate-300 px-4 text-sm font-semibold text-white';}` +
+		`else{rb.disabled=false;rb.textContent=count>0?'Восстановить '+count+' документов':'Восстановить';rb.className='inline-flex h-9 items-center rounded-xl bg-amber-500 px-4 text-sm font-semibold text-white hover:bg-amber-400';}` +
+		`}else{restoreForm.style.display='none';}` +
 		`document.getElementById('archiveQueryModal').style.display='flex';` +
 		`if(opID&&logCol){` +
-		`fetch(window.location.origin+'/admin/ajax/request-log-info?op_id='+encodeURIComponent(opID)+'&log_collection='+encodeURIComponent(logCol),` +
-		`{headers:{'X-Requested-With':'fetch'}})` +
+		`fetch(window.location.origin+'/admin/ajax/request-log-info?op_id='+encodeURIComponent(opID)+'&log_collection='+encodeURIComponent(logCol),{headers:{'X-Requested-With':'fetch'}})` +
 		`.then(function(r){return r.text();})` +
 		`.then(function(h){if(h){infoDiv.innerHTML=h;infoDiv.style.display='block';}else{c.style.display='block';}})` +
-		`.catch(function(){c.style.display='block';});}};` +
-		`window._openArchiveDocsBtn=function(btn){` +
-		`_openArchiveDocs(` +
-		`btn.getAttribute('data-col'),` +
-		`btn.getAttribute('data-opid'),` +
-		`btn.getAttribute('data-srccol'),` +
-		`btn.getAttribute('data-action'),` +
-		`parseInt(btn.getAttribute('data-count'),10),` +
-		`parseInt(btn.getAttribute('data-restored'),10));};` +
-		`window._openArchiveDocs=function(archiveCol,opID,sourceCol,action,count,restoredAt){` +
-		`document.getElementById('archiveDocsModal').style.display='flex';` +
-		`document.getElementById('archiveDocsContent').innerHTML='<p class="text-slate-500 text-sm">Загрузка...</p>';` +
-		`document.getElementById('archiveRestoreForm').action=action;` +
-		`document.getElementById('archiveRestoreCol').value=sourceCol;` +
-		`document.getElementById('archiveRestoreOpID').value=opID;` +
-		`var btn=document.getElementById('archiveRestoreBtn');` +
-		`if(restoredAt>0){` +
-		`btn.disabled=true;btn.textContent='Уже восстановлено';btn.className=btn.className.replace('bg-amber-500','bg-slate-300').replace('hover:bg-amber-400','');` +
-		`}else{` +
-		`btn.disabled=false;btn.textContent=count>0?'Восстановить '+count+' документов':'Восстановить';btn.className='inline-flex h-9 items-center rounded-xl bg-amber-500 px-4 text-sm font-semibold text-white hover:bg-amber-400';}` +
-		`fetch(window.location.origin+'/admin/archive/docs?collection='+encodeURIComponent(archiveCol)+'&operation_id='+encodeURIComponent(opID),` +
-		`{headers:{'X-Requested-With':'fetch'}})` +
+		`.catch(function(){c.style.display='block';});}` +
+		`if(arcCol&&opID){` +
+		`docsSection.style.display='block';` +
+		`var dc=document.getElementById('archiveDocsContent');` +
+		`dc.innerHTML='<p class="text-slate-500 text-sm">Загрузка документов...</p>';` +
+		`fetch(window.location.origin+'/admin/archive/docs?collection='+encodeURIComponent(arcCol)+'&operation_id='+encodeURIComponent(opID),{headers:{'X-Requested-With':'fetch'}})` +
 		`.then(function(r){return r.text();})` +
-		`.then(function(h){document.getElementById('archiveDocsContent').innerHTML=h;})` +
-		`.catch(function(){document.getElementById('archiveDocsContent').innerHTML='<p class="text-rose-500 text-sm">Ошибка загрузки</p>';});};` +
+		`.then(function(h){dc.innerHTML=h;})` +
+		`.catch(function(){dc.innerHTML='<p class="text-rose-500 text-sm">Ошибка загрузки</p>';});}};` +
 		`window._archiveRestore=function(e){e.preventDefault();` +
 		`if(!confirm('Восстановить все документы операции?'))return false;` +
 		`var form=document.getElementById('archiveRestoreForm');` +
@@ -353,9 +292,9 @@ func archiveDocsScript() string {
 		`fetch(window.location.origin+form.getAttribute('action'),{method:'POST',body:new FormData(form),headers:{'X-Requested-With':'fetch'}})` +
 		`.then(function(r){return r.json();})` +
 		`.then(function(d){btn.disabled=false;` +
-		`if(d.ok){document.getElementById('archiveDocsModal').style.display='none';location.reload();}` +
-		`else{btn.disabled=false;btn.textContent='Восстановить';alert(d.error||'Ошибка');}})` +
-		`.catch(function(){btn.disabled=false;btn.textContent='Восстановить';alert('Ошибка сети');});` +
+		`if(d.ok){document.getElementById('archiveQueryModal').style.display='none';location.reload();}` +
+		`else{btn.textContent='Восстановить';alert(d.error||'Ошибка');}})` +
+		`.catch(function(){btn.textContent='Восстановить';alert('Ошибка сети');});` +
 		`return false;};}</script>`
 }
 
@@ -396,12 +335,6 @@ func archiveSearchForm(collection, search, baseAjaxURL, panelID string) string {
 	)
 }
 
-func archiveFromLogScript() string {
-	return `<script>if(!window._arcFromLogInit){window._arcFromLogInit=true;` +
-		`window._openArchiveFromLog=function(btn){` +
-		`_openArchiveDocs(btn.getAttribute('data-arc-col'),btn.getAttribute('data-op-id'),btn.getAttribute('data-src-col'),btn.getAttribute('data-action'),0,0);` +
-		`};}</script>`
-}
 
 func archiveRLCell(label, value string) string {
 	return `<div><span style="color:#64748b">` + label + `:</span> <span style="color:#1e293b;font-weight:500">` + template.HTMLEscapeString(value) + `</span></div>`

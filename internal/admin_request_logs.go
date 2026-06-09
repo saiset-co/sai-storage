@@ -23,13 +23,13 @@ func (p *AdminPanel) pageRequestLogs(_ *saiTypes.RequestCtx) (*admin.PageData, e
 	for _, c := range collections {
 		if strings.HasSuffix(c, "_request_logs") {
 			items = append(items, twoColItem{
-				Label: c,
+				Label: strings.TrimSuffix(c, "_request_logs"),
 				URL:   "/admin/ajax/request-logs?collection=" + c,
 			})
 		}
 	}
 
-	scripts := twoColScript() + requestLogFilterScript() + archiveDocsScript() + archiveFromLogScript() + sdScript()
+	scripts := twoColScript() + requestLogFilterScript() + archiveDocsScript()
 
 	return &admin.PageData{
 		Sections: []admin.Section{
@@ -113,7 +113,6 @@ func (p *AdminPanel) handleAjaxRequestLogs(ctx *saiTypes.RequestCtx) {
 	}
 
 	sb.WriteString(archiveQueryModal())
-	sb.WriteString(archiveDocsModal(""))
 
 	sb.WriteString(`<div class="overflow-x-auto"><table class="min-w-full divide-y divide-slate-200 text-sm">`)
 	sb.WriteString(`<thead class="bg-slate-50"><tr>`)
@@ -146,39 +145,31 @@ func (p *AdminPanel) handleAjaxRequestLogs(ctx *saiTypes.RequestCtx) {
 
 		docJSON, _ := ctx.Marshal(doc)
 
-		var dropdownItems []string
-		if opID != "" && srcCollection != "" && (method == "POST" || method == "PUT" || method == "DELETE") {
-			archiveSuffix := "_create_archive"
-			restoreAction := "/admin/restore/create"
-			if method == "PUT" {
-				archiveSuffix = "_update_archive"
+		arcCol := ""
+		restoreAction := ""
+		if opID != "" && srcCollection != "" {
+			switch method {
+			case "POST":
+				arcCol = srcCollection + "_create_archive"
+				restoreAction = "/admin/restore/create"
+			case "PUT":
+				arcCol = srcCollection + "_update_archive"
 				restoreAction = "/admin/restore/update"
-			} else if method == "DELETE" {
-				archiveSuffix = "_delete_archive"
+			case "DELETE":
+				arcCol = srcCollection + "_delete_archive"
 				restoreAction = "/admin/restore/delete"
 			}
-			dropdownItems = append(dropdownItems, fmt.Sprintf(
-				`<button type="button" data-arc-col="%s" data-op-id="%s" data-src-col="%s" data-action="%s" onclick="_openArchiveFromLog(this)" `+
-					`style="display:block;width:100%%;text-align:left;padding:6px 10px;border-radius:6px;font-size:12px;font-weight:500;color:#334155;background:none;border:none;cursor:pointer;white-space:nowrap" `+
-					`onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background=''">Архив</button>`,
-				template.HTMLEscapeString(srcCollection+archiveSuffix),
-				template.HTMLEscapeString(opID),
-				template.HTMLEscapeString(srcCollection),
-				template.HTMLEscapeString(restoreAction),
-			))
 		}
 
-		borderRadius := "8px"
-		if len(dropdownItems) > 0 {
-			borderRadius = "8px 0 0 8px"
-		}
 		primaryBtn := fmt.Sprintf(
-			`<button data-q="%s" data-op-id="%s" data-log-col="%s" onclick="_openArchiveDetails(this)" `+
-				`style="display:inline-flex;align-items:center;padding:5px 12px;background:#6366f1;border:none;cursor:pointer;font-size:12px;font-weight:600;color:white;border-radius:%s;white-space:nowrap">Детали</button>`,
+			`<button data-q="%s" data-op-id="%s" data-log-col="%s" data-arc-col="%s" data-src-col="%s" data-action="%s" onclick="_openArchiveDetails(this)" `+
+				`style="display:inline-flex;align-items:center;padding:5px 12px;background:#6366f1;border:none;cursor:pointer;font-size:12px;font-weight:600;color:white;border-radius:8px;white-space:nowrap">Детали</button>`,
 			template.HTMLEscapeString(string(docJSON)),
 			template.HTMLEscapeString(opID),
 			template.HTMLEscapeString(collection),
-			borderRadius,
+			template.HTMLEscapeString(arcCol),
+			template.HTMLEscapeString(srcCollection),
+			template.HTMLEscapeString(restoreAction),
 		)
 
 		sb.WriteString(`<tr class="hover:bg-slate-50">`)
@@ -187,7 +178,7 @@ func (p *AdminPanel) handleAjaxRequestLogs(ctx *saiTypes.RequestCtx) {
 		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3 font-mono text-xs">%s</td>`, template.HTMLEscapeString(path)))
 		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3 text-xs font-mono text-slate-400">%s</td>`, template.HTMLEscapeString(ip)))
 		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3 text-xs font-mono text-slate-400">%s</td>`, template.HTMLEscapeString(userID)))
-		sb.WriteString(`<td class="px-4 py-3">` + sdWrap(primaryBtn, "#6366f1", dropdownItems) + `</td>`)
+		sb.WriteString(`<td class="px-4 py-3">` + primaryBtn + `</td>`)
 		sb.WriteString(`</tr>`)
 	}
 	sb.WriteString(`</tbody></table></div>`)

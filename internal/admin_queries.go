@@ -64,7 +64,7 @@ func (p *AdminPanel) pageQueryStats(ctx *saiTypes.RequestCtx) (*admin.PageData, 
 
 		viewBtn := fmt.Sprintf(
 			`<button data-op-id="%s" data-log-col="%s" data-q="%s" onclick="_openQPByOpID(this)" `+
-				`style="display:inline-flex;align-items:center;padding:5px 12px;background:#6366f1;border:none;cursor:pointer;font-size:12px;font-weight:600;color:white;border-radius:8px 0 0 8px;white-space:nowrap">Просмотр</button>`,
+				`style="display:inline-flex;align-items:center;padding:5px 12px;background:#6366f1;border:none;cursor:pointer;font-size:12px;font-weight:600;color:white;border-radius:8px 0 0 8px;white-space:nowrap">Детали</button>`,
 			template.HTMLEscapeString(opID),
 			template.HTMLEscapeString(collection+"_request_logs"),
 			template.HTMLEscapeString(queryStr),
@@ -186,7 +186,7 @@ func (p *AdminPanel) pageSlowQueries(ctx *saiTypes.RequestCtx) (*admin.PageData,
 
 		viewBtn := fmt.Sprintf(
 			`<button data-op-id="%s" data-log-col="%s" data-q="%s" onclick="_openQPByOpID(this)" `+
-				`style="display:inline-flex;align-items:center;padding:5px 12px;background:#6366f1;border:none;cursor:pointer;font-size:12px;font-weight:600;color:white;border-radius:8px 0 0 8px;white-space:nowrap">Просмотр</button>`,
+				`style="display:inline-flex;align-items:center;padding:5px 12px;background:#6366f1;border:none;cursor:pointer;font-size:12px;font-weight:600;color:white;border-radius:8px 0 0 8px;white-space:nowrap">Детали</button>`,
 			template.HTMLEscapeString(opID),
 			template.HTMLEscapeString(collection+"_request_logs"),
 			template.HTMLEscapeString(queryStr),
@@ -337,7 +337,7 @@ func queryViewBtn(queryStr, opID, logCollection string) string {
 	return fmt.Sprintf(
 		`<button type="button" data-op-id="%s" data-log-col="%s" data-q="%s" onclick="_openQPByOpID(this)" `+
 			`style="display:block;width:100%%;text-align:left;padding:6px 10px;border-radius:6px;font-size:12px;font-weight:500;color:#334155;background:none;border:none;cursor:pointer;white-space:nowrap" `+
-			`onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background=''">Просмотр</button>`,
+			`onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background=''">Детали</button>`,
 		template.HTMLEscapeString(opID),
 		template.HTMLEscapeString(logCollection),
 		template.HTMLEscapeString(queryStr),

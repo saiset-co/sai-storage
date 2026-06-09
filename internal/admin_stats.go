@@ -26,14 +26,16 @@ func (p *AdminPanel) pageCollections(_ *saiTypes.RequestCtx) (*admin.PageData, e
 	sb.WriteString(`<button onclick="_colBack()" style="display:inline-flex;align-items:center;gap:6px;height:36px;border:1px solid #cbd5e1;border-radius:8px;background:white;color:#475569;font-size:14px;font-weight:500;padding:0 16px;cursor:pointer">← Коллекции</button>`)
 	sb.WriteString(`</div>`)
 
-	sb.WriteString(`<div id="colStatsTable"><div class="overflow-x-auto"><table class="min-w-full divide-y divide-slate-200 text-sm">`)
+	sb.WriteString(`<div id="colStatsTable">`)
+	sb.WriteString(jsSearch("Фильтр по коллекции...", "tbl-collections"))
+	sb.WriteString(`<div class="overflow-x-auto"><table id="tbl-collections" class="min-w-full divide-y divide-slate-200 text-sm">`)
 	sb.WriteString(`<thead class="bg-slate-50"><tr>`)
 	for _, h := range []string{"Коллекция", "Документов", "Размер", "Индексов"} {
 		sb.WriteString(fmt.Sprintf(`<th class="px-4 py-3 text-left font-medium text-slate-600">%s</th>`, h))
 	}
 	sb.WriteString(`</tr></thead><tbody class="divide-y divide-slate-100">`)
 	for _, s := range stats {
-		sb.WriteString(`<tr class="hover:bg-slate-50">`)
+		sb.WriteString(fmt.Sprintf(`<tr class="hover:bg-slate-50" data-search="%s">`, template.HTMLEscapeString(s.Name)))
 		sb.WriteString(fmt.Sprintf(
 			`<td class="px-4 py-3"><button class="text-indigo-600 hover:text-indigo-800 font-semibold text-left" onclick="_colOpen('%s')">%s</button></td>`,
 			template.JSEscapeString(s.Name), template.HTMLEscapeString(s.Name),

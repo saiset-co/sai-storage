@@ -38,9 +38,14 @@ func twoColPage(items []twoColItem, panelID, scripts string) string {
 	)
 
 	return `<div style="display:flex;gap:0;min-height:400px;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden">` +
-		`<div style="width:220px;flex:0 0 220px;border-right:1px solid #e2e8f0;overflow-y:auto;padding:8px;background:#f8fafc">` +
-		emptyMsg + sidebar.String() +
+		`<div style="width:220px;flex:0 0 220px;border-right:1px solid #e2e8f0;display:flex;flex-direction:column;background:#f8fafc">` +
+		`<div style="padding:6px 8px;border-bottom:1px solid #e2e8f0;flex:0 0 auto">` +
+		`<input type="text" placeholder="Фильтр..." oninput="_tcFilter(this,'` + panelID + `')" ` +
+		`style="width:100%;height:28px;border:1px solid #e2e8f0;border-radius:6px;padding:0 8px;font-size:12px;outline:none;box-sizing:border-box;background:white">` +
 		`</div>` +
+		`<div style="flex:1;overflow-y:auto;padding:8px">` +
+		emptyMsg + sidebar.String() +
+		`</div></div>` +
 		`<div id="` + panelID + `" style="flex:1;min-width:0;padding:20px;overflow-x:auto">` +
 		`<p style="font-size:13px;color:#94a3b8">Выберите коллекцию.</p>` +
 		`</div></div>` +
@@ -60,6 +65,10 @@ func twoColScript() string {
 		`.then(function(r){return r.text();})` +
 		`.then(function(h){panel.innerHTML=h;})` +
 		`.catch(function(){panel.innerHTML='<p style="font-size:13px;color:#ef4444">Ошибка загрузки</p>';});};` +
+		`window._tcFilter=function(inp,panelID){` +
+		`var q=inp.value.toLowerCase();` +
+		`document.querySelectorAll('.tc-item[data-panel="'+panelID+'"]').forEach(function(b){` +
+		`b.style.display=b.textContent.toLowerCase().indexOf(q)>=0?'':'none';});};` +
 		`}</script>`
 }
 

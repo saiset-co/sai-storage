@@ -146,14 +146,6 @@ func (p *AdminPanel) handleAjaxRequestLogs(ctx *saiTypes.RequestCtx) {
 
 		docJSON, _ := ctx.Marshal(doc)
 
-		primaryBtn := fmt.Sprintf(
-			`<button data-q="%s" data-op-id="%s" data-log-col="%s" onclick="_openArchiveDetails(this)" `+
-				`style="display:inline-flex;align-items:center;padding:5px 12px;background:#6366f1;border:none;cursor:pointer;font-size:12px;font-weight:600;color:white;border-radius:8px;white-space:nowrap">Детали</button>`,
-			template.HTMLEscapeString(string(docJSON)),
-			template.HTMLEscapeString(opID),
-			template.HTMLEscapeString(collection),
-		)
-
 		var dropdownItems []string
 		if opID != "" && srcCollection != "" && (method == "POST" || method == "PUT" || method == "DELETE") {
 			archiveSuffix := "_create_archive"
@@ -175,6 +167,19 @@ func (p *AdminPanel) handleAjaxRequestLogs(ctx *saiTypes.RequestCtx) {
 				template.HTMLEscapeString(restoreAction),
 			))
 		}
+
+		borderRadius := "8px"
+		if len(dropdownItems) > 0 {
+			borderRadius = "8px 0 0 8px"
+		}
+		primaryBtn := fmt.Sprintf(
+			`<button data-q="%s" data-op-id="%s" data-log-col="%s" onclick="_openArchiveDetails(this)" `+
+				`style="display:inline-flex;align-items:center;padding:5px 12px;background:#6366f1;border:none;cursor:pointer;font-size:12px;font-weight:600;color:white;border-radius:%s;white-space:nowrap">Детали</button>`,
+			template.HTMLEscapeString(string(docJSON)),
+			template.HTMLEscapeString(opID),
+			template.HTMLEscapeString(collection),
+			borderRadius,
+		)
 
 		sb.WriteString(`<tr class="hover:bg-slate-50">`)
 		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">%s</td>`, timeStr))

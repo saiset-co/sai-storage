@@ -447,9 +447,18 @@ func filterFingerprint(keys []string) string {
 func matchKeys(pipeline types.OrderedPipeline) []string {
 	computed := make(map[string]struct{})
 	keySet := make(map[string]struct{})
+	grouped := false
 	for _, stage := range pipeline {
 		for _, elem := range stage {
+			if grouped {
+				continue
+			}
 			switch elem.Key {
+			case "$group":
+				if doc, ok := elem.Value.(bson.D); ok {
+					extractGroupIDFields(doc, keySet)
+				}
+				grouped = true
 			case "$addFields", "$set":
 				if doc, ok := elem.Value.(bson.D); ok {
 					for _, f := range doc {
@@ -460,17 +469,46 @@ func matchKeys(pipeline types.OrderedPipeline) []string {
 				if doc, ok := elem.Value.(bson.D); ok {
 					extractBsonDKeys(doc, keySet)
 				}
+			case "$sort":
+				if doc, ok := elem.Value.(bson.D); ok {
+					for _, f := range doc {
+						if f.Key != "" && f.Key[0] != '$' {
+							keySet[f.Key] = struct{}{}
+						}
+					}
+				}
 			}
 		}
 	}
 	keys := make([]string, 0, len(keySet))
 	for k := range keySet {
-		if _, isComputed := computed[k]; !isComputed {
+		if _, isComputed := computed[k]; !isComputed && k != "_id" {
 			keys = append(keys, k)
 		}
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+func extractGroupIDFields(groupDoc bson.D, keySet map[string]struct{}) {
+	for _, f := range groupDoc {
+		if f.Key != "_id" {
+			continue
+		}
+		switch v := f.Value.(type) {
+		case string:
+			if len(v) > 1 && v[0] == '$' {
+				keySet[v[1:]] = struct{}{}
+			}
+		case bson.D:
+			for _, sub := range v {
+				if sv, ok := sub.Value.(string); ok && len(sv) > 1 && sv[0] == '$' {
+					keySet[sv[1:]] = struct{}{}
+				}
+			}
+		}
+		break
+	}
 }
 
 func extractBsonDKeys(doc bson.D, keySet map[string]struct{}) {

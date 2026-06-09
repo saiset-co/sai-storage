@@ -29,7 +29,7 @@ func (p *AdminPanel) pageRequestLogs(_ *saiTypes.RequestCtx) (*admin.PageData, e
 		}
 	}
 
-	scripts := twoColScript() + requestLogFilterScript() + archiveDocsScript() + archiveFromLogScript()
+	scripts := twoColScript() + requestLogFilterScript() + archiveDocsScript() + archiveFromLogScript() + sdScript()
 
 	return &admin.PageData{
 		Sections: []admin.Section{

@@ -7,6 +7,7 @@ import (
 	"html/template"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/saiset-co/sai-service/admin"
 	saiTypes "github.com/saiset-co/sai-service/types"
@@ -161,6 +162,45 @@ func (p *AdminPanel) handleArchiveDocs(ctx *saiTypes.RequestCtx) {
 		return
 	}
 
+	sourceCollection := ""
+	if sc, ok := docs[0]["source_collection"].(string); ok {
+		sourceCollection = sc
+	}
+	if sourceCollection == "" {
+		for _, sfx := range []string{"_update_archive", "_delete_archive"} {
+			if strings.HasSuffix(archiveCollection, sfx) {
+				sourceCollection = strings.TrimSuffix(archiveCollection, sfx)
+				break
+			}
+		}
+	}
+	if sourceCollection != "" {
+		logDocs, _, _ := p.service.GetRepo().ReadDocuments(context.Background(), types.ReadDocumentsRequest{
+			Collection: sourceCollection + "_request_logs",
+			Filter:     map[string]interface{}{"operation_id": opID},
+			Limit:      1,
+		})
+		if len(logDocs) > 0 {
+			rl := logDocs[0]
+			sb.WriteString(`<div style="background:#f8fafc;border-radius:10px;padding:12px 16px;margin-bottom:14px;border:1px solid #e2e8f0;font-size:12px">`)
+			sb.WriteString(`<div style="display:flex;flex-wrap:wrap;gap:4px 20px;margin-bottom:4px">`)
+			if ts, ok := rl["request_unix"].(float64); ok && ts > 0 {
+				sb.WriteString(archiveRLCell("Дата", time.Unix(int64(ts), 0).Format("02.01.2006 15:04:05")))
+			}
+			for _, pair := range [][2]string{{"Метод", "method"}, {"Путь", "path"}, {"IP", "ip"}, {"User", "user"}, {"User ID", "user_id"}} {
+				if v, ok := rl[pair[1]].(string); ok && v != "" {
+					sb.WriteString(archiveRLCell(pair[0], v))
+				}
+			}
+			sb.WriteString(`</div>`)
+			if body, ok := rl["body"].(string); ok && body != "" {
+				sb.WriteString(`<div style="color:#64748b;margin-bottom:3px">Тело запроса:</div>`)
+				sb.WriteString(`<pre style="font-size:11px;background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:10px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;max-height:150px;margin:0">` + template.HTMLEscapeString(body) + `</pre>`)
+			}
+			sb.WriteString(`</div>`)
+		}
+	}
+
 	metaSkip := map[string]bool{
 		"_id": true, "archive_operation_id": true, "archive_time": true,
 		"source_collection": true, "archive_filter": true, "archive_update": true,
@@ -264,7 +304,7 @@ func archiveDocsScript() string {
 		`if(restoredAt>0){` +
 		`btn.disabled=true;btn.textContent='Уже восстановлено';btn.className=btn.className.replace('bg-amber-500','bg-slate-300').replace('hover:bg-amber-400','');` +
 		`}else{` +
-		`btn.disabled=false;btn.textContent='Восстановить '+count+' документов';btn.className='inline-flex h-9 items-center rounded-xl bg-amber-500 px-4 text-sm font-semibold text-white hover:bg-amber-400';}` +
+		`btn.disabled=false;btn.textContent=count>0?'Восстановить '+count+' документов':'Восстановить';btn.className='inline-flex h-9 items-center rounded-xl bg-amber-500 px-4 text-sm font-semibold text-white hover:bg-amber-400';}` +
 		`fetch(window.location.origin+'/admin/archive/docs?collection='+encodeURIComponent(archiveCol)+'&operation_id='+encodeURIComponent(opID),` +
 		`{headers:{'X-Requested-With':'fetch'}})` +
 		`.then(function(r){return r.text();})` +
@@ -319,6 +359,17 @@ func archiveSearchForm(collection, search, baseAjaxURL, panelID string) string {
 		panelID,
 		template.HTMLEscapeString(search),
 	)
+}
+
+func archiveFromLogScript() string {
+	return `<script>if(!window._arcFromLogInit){window._arcFromLogInit=true;` +
+		`window._openArchiveFromLog=function(btn){` +
+		`_openArchiveDocs(btn.getAttribute('data-arc-col'),btn.getAttribute('data-op-id'),btn.getAttribute('data-src-col'),btn.getAttribute('data-action'),0,0);` +
+		`};}</script>`
+}
+
+func archiveRLCell(label, value string) string {
+	return `<div><span style="color:#64748b">` + label + `:</span> <span style="color:#1e293b;font-weight:500">` + template.HTMLEscapeString(value) + `</span></div>`
 }
 
 func truncate(s string, n int) string {

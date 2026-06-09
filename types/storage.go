@@ -17,6 +17,6 @@ type StorageRepository interface {
 	ListIndexes(ctx context.Context, collection string) ([]IndexInfo, error)
 	CreateIndex(ctx context.Context, req CreateIndexRequest) error
 	GetSlowQueries(ctx context.Context, limit int) ([]SlowQuery, error)
-	LogSlowQuery(ctx context.Context, collection, operation string, durationMs, docsCount int64, filterKeys []string, sortKeys map[string]int) error
+	LogSlowQuery(ctx context.Context, collection, operation string, durationMs, docsCount int64, filterKeys []string, sortKeys map[string]int, operationID string) error
 	GetArchiveGroups(ctx context.Context, collection, search string, skip, limit int) ([]ArchiveGroup, int64, error)
 }

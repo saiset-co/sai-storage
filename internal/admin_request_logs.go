@@ -28,7 +28,7 @@ func (p *AdminPanel) pageRequestLogs(_ *saiTypes.RequestCtx) (*admin.PageData, e
 		}
 	}
 
-	scripts := twoColScript() + requestLogDetailScript() + requestLogFilterScript()
+	scripts := twoColScript() + requestLogDetailScript() + requestLogFilterScript() + archiveDocsScript() + archiveFromLogScript()
 
 	return &admin.PageData{
 		Sections: []admin.Section{
@@ -112,10 +112,11 @@ func (p *AdminPanel) handleAjaxRequestLogs(ctx *saiTypes.RequestCtx) {
 	}
 
 	sb.WriteString(requestLogDetailModal())
+	sb.WriteString(archiveDocsModal(""))
 
 	sb.WriteString(`<div class="overflow-x-auto"><table class="min-w-full divide-y divide-slate-200 text-sm">`)
 	sb.WriteString(`<thead class="bg-slate-50"><tr>`)
-	for _, h := range []string{"Время", "Метод", "Путь", "IP", "Действия"} {
+	for _, h := range []string{"Время", "Метод", "Путь", "IP", "User ID", "Действия"} {
 		sb.WriteString(fmt.Sprintf(`<th class="px-4 py-3 text-left font-medium text-slate-600">%s</th>`, h))
 	}
 	sb.WriteString(`</tr></thead><tbody class="divide-y divide-slate-100">`)
@@ -130,18 +131,40 @@ func (p *AdminPanel) handleAjaxRequestLogs(ctx *saiTypes.RequestCtx) {
 		method, _ := doc["method"].(string)
 		path, _ := doc["path"].(string)
 		ip, _ := doc["ip"].(string)
+		userID, _ := doc["user_id"].(string)
+		opID, _ := doc["operation_id"].(string)
+		srcCollection, _ := doc["collection"].(string)
 
 		docJSON, _ := ctx.Marshal(doc)
+
+		var archiveBtn string
+		if opID != "" && srcCollection != "" && (method == "PUT" || method == "DELETE") {
+			archiveSuffix := "_update_archive"
+			restoreAction := "/admin/restore/update"
+			if method == "DELETE" {
+				archiveSuffix = "_delete_archive"
+				restoreAction = "/admin/restore/delete"
+			}
+			archiveBtn = fmt.Sprintf(
+				` <button data-arc-col="%s" data-op-id="%s" data-src-col="%s" data-action="%s" onclick="_openArchiveFromLog(this)" `+
+					`class="inline-flex items-center rounded px-2 py-1 text-xs font-medium bg-indigo-100 text-indigo-700 hover:bg-indigo-200">Архив</button>`,
+				template.HTMLEscapeString(srcCollection+archiveSuffix),
+				template.HTMLEscapeString(opID),
+				template.HTMLEscapeString(srcCollection),
+				template.HTMLEscapeString(restoreAction),
+			)
+		}
 
 		sb.WriteString(`<tr class="hover:bg-slate-50">`)
 		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">%s</td>`, timeStr))
 		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3">%s</td>`, methodBadge(method)))
 		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3 font-mono text-xs">%s</td>`, template.HTMLEscapeString(path)))
 		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3 text-xs font-mono text-slate-400">%s</td>`, template.HTMLEscapeString(ip)))
+		sb.WriteString(fmt.Sprintf(`<td class="px-4 py-3 text-xs font-mono text-slate-400">%s</td>`, template.HTMLEscapeString(userID)))
 		sb.WriteString(fmt.Sprintf(
 			`<td class="px-4 py-3"><button data-doc="%s" onclick="_showLogDetail(this)" `+
-				`class="inline-flex items-center rounded px-2 py-1 text-xs font-medium bg-slate-100 text-slate-600 hover:bg-slate-200">Детали</button></td>`,
-			template.HTMLEscapeString(string(docJSON)),
+				`class="inline-flex items-center rounded px-2 py-1 text-xs font-medium bg-slate-100 text-slate-600 hover:bg-slate-200">Детали</button>%s</td>`,
+			template.HTMLEscapeString(string(docJSON)), archiveBtn,
 		))
 		sb.WriteString(`</tr>`)
 	}

@@ -60,6 +60,7 @@ func (p *AdminPanel) pageQueryStats(ctx *saiTypes.RequestCtx) (*admin.PageData, 
 		sortKeys := toIntMap(doc["sort_keys"])
 		keysJSON, _ := ctx.Marshal(buildIndexSpec(filterKeys, sortKeys))
 		queryStr := formatQueryPreview(collection, operation, filterKeys)
+		opID, _ := doc["last_operation_id"].(string)
 
 		primaryBtn := fmt.Sprintf(
 			`<button data-collection="%s" data-keys="%s" onclick="_openIdxCreate(this)" `+
@@ -67,7 +68,7 @@ func (p *AdminPanel) pageQueryStats(ctx *saiTypes.RequestCtx) (*admin.PageData, 
 			template.HTMLEscapeString(collection), template.HTMLEscapeString(string(keysJSON)),
 		)
 		dropdownItems := []string{
-			sdBtnData("Просмотр", "data-q", queryStr, "_openQP(this)"),
+			queryViewBtn(queryStr, opID, collection+"_request_logs"),
 		}
 
 		sb.WriteString(`<tr class="hover:bg-slate-50">`)
@@ -108,6 +109,7 @@ func (p *AdminPanel) pageSlowQueries(ctx *saiTypes.RequestCtx) (*admin.PageData,
 	page := pageNum(ctx)
 	skip := (page - 1) * adminPerPage
 
+	sortByTs := bson.D{{Key: "$sort", Value: bson.D{{Key: "ts", Value: 1}}}}
 	groupStage := bson.D{{Key: "$group", Value: bson.D{
 		{Key: "_id", Value: bson.D{
 			{Key: "collection", Value: "$collection"},
@@ -119,11 +121,12 @@ func (p *AdminPanel) pageSlowQueries(ctx *saiTypes.RequestCtx) (*admin.PageData,
 		{Key: "count", Value: bson.D{{Key: "$sum", Value: 1}}},
 		{Key: "last_seen", Value: bson.D{{Key: "$max", Value: "$ts"}}},
 		{Key: "filter_keys", Value: bson.D{{Key: "$first", Value: "$filter_keys"}}},
+		{Key: "operation_id", Value: bson.D{{Key: "$last", Value: "$operation_id"}}},
 	}}}
 
 	countDocs, _, _ := p.service.GetRepo().AggregateDocuments(context.Background(), types.AggregateDocumentsRequest{
 		Collection: "_admin_slow_queries",
-		Pipeline:   types.OrderedPipeline{groupStage, bson.D{{Key: "$count", Value: "n"}}},
+		Pipeline:   types.OrderedPipeline{sortByTs, groupStage, bson.D{{Key: "$count", Value: "n"}}},
 	})
 	var total int64
 	if len(countDocs) > 0 {
@@ -133,6 +136,7 @@ func (p *AdminPanel) pageSlowQueries(ctx *saiTypes.RequestCtx) (*admin.PageData,
 	docs, _, err := p.service.GetRepo().AggregateDocuments(context.Background(), types.AggregateDocumentsRequest{
 		Collection: "_admin_slow_queries",
 		Pipeline: types.OrderedPipeline{
+			sortByTs,
 			groupStage,
 			bson.D{{Key: "$sort", Value: bson.D{{Key: "max_duration_ms", Value: -1}}}},
 			bson.D{{Key: "$skip", Value: int64(skip)}},
@@ -172,6 +176,7 @@ func (p *AdminPanel) pageSlowQueries(ctx *saiTypes.RequestCtx) (*admin.PageData,
 		sKeys := toIntMap(doc["sort_keys"])
 		keysJSON, _ := ctx.Marshal(buildIndexSpec(fKeys, sKeys))
 		queryStr := formatQueryPreview(collection, operation, fKeys)
+		opID, _ := doc["operation_id"].(string)
 
 		primaryBtn := fmt.Sprintf(
 			`<button data-collection="%s" data-keys="%s" onclick="_openIdxCreate(this)" `+
@@ -179,7 +184,7 @@ func (p *AdminPanel) pageSlowQueries(ctx *saiTypes.RequestCtx) (*admin.PageData,
 			template.HTMLEscapeString(collection), template.HTMLEscapeString(string(keysJSON)),
 		)
 		dropdownItems := []string{
-			sdBtnData("Просмотр", "data-q", queryStr, "_openQP(this)"),
+			queryViewBtn(queryStr, opID, collection+"_request_logs"),
 		}
 
 		docsCell := slowDocsCell(maxDocs)
@@ -312,6 +317,44 @@ func (p *AdminPanel) pageCustomQueries(ctx *saiTypes.RequestCtx) (*admin.PageDat
 			},
 		},
 	}, nil
+}
+
+func queryViewBtn(queryStr, opID, logCollection string) string {
+	return fmt.Sprintf(
+		`<button type="button" data-op-id="%s" data-log-col="%s" data-q="%s" onclick="_openQPByOpID(this)" `+
+			`style="display:block;width:100%%;text-align:left;padding:6px 10px;border-radius:6px;font-size:12px;font-weight:500;color:#334155;background:none;border:none;cursor:pointer;white-space:nowrap" `+
+			`onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background=''">Просмотр</button>`,
+		template.HTMLEscapeString(opID),
+		template.HTMLEscapeString(logCollection),
+		template.HTMLEscapeString(queryStr),
+	)
+}
+
+func (p *AdminPanel) handleAjaxRequestLogBody(ctx *saiTypes.RequestCtx) {
+	opID := string(ctx.QueryArgs().Peek("op_id"))
+	logCollection := string(ctx.QueryArgs().Peek("log_collection"))
+	ctx.SetContentType("text/plain; charset=utf-8")
+	if opID == "" || logCollection == "" {
+		ctx.Response.SetBodyString("")
+		return
+	}
+	docs, _, err := p.service.GetRepo().ReadDocuments(context.Background(), types.ReadDocumentsRequest{
+		Collection: logCollection,
+		Filter:     map[string]interface{}{"operation_id": opID},
+		Limit:      1,
+	})
+	if err != nil || len(docs) == 0 {
+		ctx.Response.SetBodyString("")
+		return
+	}
+	doc := docs[0]
+	if body, ok := doc["body"].(string); ok && body != "" {
+		ctx.Response.SetBodyString(body)
+		return
+	}
+	if b, err := ctx.Marshal(doc); err == nil {
+		ctx.Response.SetBodyString(string(b))
+	}
 }
 
 func formatCustomQuery(collection, operation string, body interface{}, queryRaw string) string {
@@ -774,8 +817,20 @@ func queryPreviewScript() string {
 	return `<script>if(!window._qpInit){window._qpInit=true;` +
 		`window._openQP=function(btn){` +
 		`document.getElementById('qpContent').textContent=btn.getAttribute('data-q');` +
+		`document.getElementById('qpModal').style.display='flex';};` +
+		`window._openQPByOpID=function(btn){` +
+		`var opID=btn.getAttribute('data-op-id');` +
+		`var logCol=btn.getAttribute('data-log-col');` +
+		`var fallback=btn.getAttribute('data-q');` +
+		`document.getElementById('qpContent').textContent=fallback;` +
 		`document.getElementById('qpModal').style.display='flex';` +
-		`};}</script>`
+		`if(opID&&logCol){` +
+		`fetch(window.location.origin+'/admin/ajax/request-log-body?op_id='+encodeURIComponent(opID)+'&log_collection='+encodeURIComponent(logCol),` +
+		`{headers:{'X-Requested-With':'fetch'}})` +
+		`.then(function(r){return r.text();})` +
+		`.then(function(t){if(t)document.getElementById('qpContent').textContent=t;})` +
+		`.catch(function(){});}};` +
+		`}</script>`
 }
 
 func splitTwoArgs(body string) (arg1, arg2 string, err error) {

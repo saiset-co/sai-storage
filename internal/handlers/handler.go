@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/valyala/fasthttp"
 
 	saiTypes "github.com/saiset-co/sai-service/types"
@@ -23,6 +24,7 @@ func NewHandler(service *service.StorageService) *Handler {
 }
 
 func (h *Handler) CreateDocuments(ctx *saiTypes.RequestCtx) {
+	ctx.SetUserValue("operation_id", uuid.New().String())
 	var req types.CreateDocumentsRequest
 	if err := ctx.ReadJSON(&req); err != nil {
 		h.logRequest(ctx, "", map[string]interface{}{
@@ -45,6 +47,7 @@ func (h *Handler) CreateDocuments(ctx *saiTypes.RequestCtx) {
 }
 
 func (h *Handler) ReadDocuments(ctx *saiTypes.RequestCtx) {
+	ctx.SetUserValue("operation_id", uuid.New().String())
 	req := types.ReadDocumentsRequest{
 		Collection: string(ctx.QueryArgs().Peek("collection")),
 		Limit:      ctx.QueryArgs().GetUintOrZero("limit"),
@@ -83,6 +86,7 @@ func (h *Handler) ReadDocuments(ctx *saiTypes.RequestCtx) {
 }
 
 func (h *Handler) AggregateDocuments(ctx *saiTypes.RequestCtx) {
+	ctx.SetUserValue("operation_id", uuid.New().String())
 	req := types.AggregateDocumentsRequest{
 		Collection: string(ctx.QueryArgs().Peek("collection")),
 		Limit:      ctx.QueryArgs().GetUintOrZero("limit"),
@@ -121,6 +125,7 @@ func (h *Handler) AggregateDocuments(ctx *saiTypes.RequestCtx) {
 }
 
 func (h *Handler) UpdateDocuments(ctx *saiTypes.RequestCtx) {
+	ctx.SetUserValue("operation_id", uuid.New().String())
 	var req types.UpdateDocumentsRequest
 	if err := ctx.ReadJSON(&req); err != nil {
 		h.logRequest(ctx, "", map[string]interface{}{
@@ -143,6 +148,7 @@ func (h *Handler) UpdateDocuments(ctx *saiTypes.RequestCtx) {
 }
 
 func (h *Handler) DeleteDocuments(ctx *saiTypes.RequestCtx) {
+	ctx.SetUserValue("operation_id", uuid.New().String())
 	var req types.DeleteDocumentsRequest
 	if err := ctx.ReadJSON(&req); err != nil {
 		h.logRequest(ctx, "", map[string]interface{}{
@@ -177,6 +183,12 @@ func (h *Handler) logRequest(ctx *saiTypes.RequestCtx, collection string, body i
 	if body != nil {
 		if b, err := ctx.Marshal(body); err == nil {
 			requestInfo["body"] = string(b)
+		}
+	}
+
+	if v := ctx.UserValue("operation_id"); v != nil {
+		if s, ok := v.(string); ok && s != "" {
+			requestInfo["operation_id"] = s
 		}
 	}
 
